@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0.0",
+  "notes": [
+    "Fixtures are illustrative seed data for Codex scaffolding and tests.",
+    "They are derived from source-supported contract doctrine, not from live market facts."
+  ],
+  "contracts": [
+    "NQ",
+    "ZN",
+    "GC",
+    "6E",
+    "CL"
+  ],
+  "fixtures": [
+    {
+      "fixture_id": "nq_rates_tech_repricing",
+      "contract_id": "NQ",
+      "run_mode": "single_article",
+      "article": {
+        "headline": "Hot inflation surprise pushes yields higher as megacap tech weakens",
+        "body_excerpt": "A primary report links the move to higher front-end rate expectations and pressure on semis and AI leaders.",
+        "source_type": "primary_reporting"
+      },
+      "expected": {
+        "selected_channels": [
+          "yields",
+          "megacap tech",
+          "semis",
+          "risk appetite"
+        ],
+        "deployment_use": "wait_for_confirmation",
+        "confirmation_markers": [
+          "10Y yields and real-yield direction",
+          "QQQ and SOX relative strength"
+        ],
+        "verdict": "bearish",
+        "pricing_assessment": "underpriced",
+        "active_window": "8:30 AM ET primary US macro release or 9:30 AM to 11:00 AM ET cash-open confirmation window",
+        "notes": "Downgrade to no_edge if yields rise without sustained leadership deterioration or if cash-open acceptance contradicts the article mechanism."
+      }
+    },
+    {
+      "fixture_id": "zn_dovish_repricing_cluster",
+      "contract_id": "ZN",
+      "run_mode": "multi_article",
+      "articles": [
+        {
+          "headline": "Fed speaker opens door to slower pace",
+          "source_type": "primary_reporting"
+        },
+        {
+          "headline": "Commentators say bonds love the pivot",
+          "source_type": "commentary"
+        }
+      ],
+      "expected": {
+        "cluster_mode": "discovery",
+        "selected_channels": [
+          "Fed-path repricing",
+          "inflation-growth decomposition"
+        ],
+        "deployment_use": "continuation_bias",
+        "verdict": "bullish"
+      }
+    },
+    {
+      "fixture_id": "gc_geopolitical_without_cross_asset_confirmation",
+      "contract_id": "GC",
+      "run_mode": "single_article",
+      "article": {
+        "headline": "Gold jumps on geopolitical fears",
+        "body_excerpt": "The article is light on new facts and does not resolve whether real yields or dollar behavior support the move.",
+        "source_type": "synthesis"
+      },
+      "expected": {
+        "selected_channels": [
+          "geopolitics",
+          "liquidity stress"
+        ],
+        "pricing_assessment": "mixed",
+        "deployment_use": "wait_for_confirmation",
+        "confirmation_markers": [
+          "DXY confirmation or contradiction",
+          "Treasury reaction",
+          "spot gold behavior across the US session"
+        ],
+        "verdict": "mixed",
+        "active_window": "Any hour if unscheduled geopolitical shock; otherwise confirm through 8:00 AM to 12:00 PM ET overlap or 8:30 AM ET macro window",
+        "notes": "Downgrade to no_edge if real yields, DXY, and Treasury reaction fail to support the proposed safe-haven mechanism."
+      }
+    },
+    {
+      "fixture_id": "6e_relative_policy_divergence",
+      "contract_id": "6E",
+      "run_mode": "single_article",
+      "article": {
+        "headline": "ECB maintains hawkish tone as US data softens",
+        "body_excerpt": "The report emphasizes relative policy divergence and front-end rate spread implications.",
+        "source_type": "primary_reporting"
+      },
+      "expected": {
+        "selected_channels": [
+          "ECB-Fed divergence",
+          "Europe-versus-US growth differentials",
+          "dollar-side decomposition"
+        ],
+        "deployment_use": "continuation_bias",
+        "verdict": "bullish",
+        "pricing_assessment": "underpriced",
+        "confirmation_markers": [
+          "front-end spread behavior",
+          "DXY context",
+          "Bund versus Treasury rate moves"
+        ],
+        "dominant_side": "euro_driver",
+        "active_window": "8:00 AM to 11:30 AM ET overlap or 8:30 AM ET USD data window depending on catalyst side"
+      }
+    },
+    {
+      "fixture_id": "cl_opec_inventory_conflict",
+      "contract_id": "CL",
+      "run_mode": "multi_article",
+      "articles": [
+        {
+          "headline": "OPEC+ hints at tighter compliance",
+          "source_type": "official_statement"
+        },
+        {
+          "headline": "Inventories build sharply as refinery runs slow",
+          "source_type": "primary_reporting"
+        },
+        {
+          "headline": "Oil rallies because traders feel optimistic",
+          "source_type": "commentary"
+        }
+      ],
+      "expected": {
+        "cluster_mode": "mixed",
+        "required_buckets": [
+          "OPEC+ policy or quota enforcement",
+          "inventory and storage narrative",
+          "post hoc explanation or low-information commentary"
+        ],
+        "deployment_use": "wait_for_confirmation",
+        "verdict": "mixed"
+      }
+    }
+  ]
+}
