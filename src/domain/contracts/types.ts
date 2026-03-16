@@ -1,22 +1,51 @@
-import { Contract, DeepAnalysis, NarrativeCluster, TranslationResult } from '../entities';
-import { PricingAssessment, SourceType, Verdict } from '../enums';
+import { Contract, DeepAnalysis, HorizonSplit, NarrativeCluster, RuleTrace, TranslationResult } from '../entities';
+import { NoveltyAssessment, PricingAssessment, SourceType, Verdict } from '../enums';
+
+type DominantSide = 'euro_driver' | 'dollar_driver' | 'mixed' | 'unclear';
+
+export type ContractRuleRef = {
+  rule_id: string;
+  source_files: string[];
+  detail: string;
+  heuristic?: boolean;
+};
+
+export type ContractChannelRule = {
+  channel: string;
+  keywords: string[];
+  bullish?: string[];
+  bearish?: string[];
+  dominantSide?: DominantSide;
+};
 
 export type ContractOverride = {
   meta: Contract;
   override_id: string;
+  source_files: string[];
   channels: string[];
-  channelKeywords: string[];
   pricingModes: PricingAssessment[];
+  channelRules: ContractChannelRule[];
   invalidation_markers: string[];
   activeHours: {
     structural_windows: string[];
     event_windows: string[];
   };
-  classifySide?: (analysis: DeepAnalysis) => 'euro_driver' | 'dollar_driver' | 'mixed' | 'unclear';
-  selectVerdict: (analysis: DeepAnalysis) => Verdict;
-  choosePricing: (analysis: DeepAnalysis) => PricingAssessment;
-  chooseExpressionVehicle: (cluster: NarrativeCluster | null, sourceType: SourceType) => string;
-  driverHierarchy: (analysis: DeepAnalysis) => string[];
+  horizonTemplate: HorizonSplit[];
+  tradeUseNote: TranslationResult['trade_use_note'];
+  ruleRefs: {
+    screening: ContractRuleRef;
+    clustering: ContractRuleRef;
+    analysis: ContractRuleRef;
+    translation: ContractRuleRef;
+    pricing: ContractRuleRef;
+    deployment: ContractRuleRef;
+    activeHours: ContractRuleRef;
+  };
+  classifySide?: (analysis: DeepAnalysis, matchedChannels: string[]) => DominantSide;
+  selectVerdict: (analysis: DeepAnalysis, matchedChannels: string[]) => Verdict;
+  choosePricing: (analysis: DeepAnalysis, matchedChannels: string[], verdict: Verdict) => PricingAssessment;
+  chooseExpressionVehicle: (cluster: NarrativeCluster | null, sourceType: SourceType, matchedChannels: string[]) => string;
+  driverHierarchy: (analysis: DeepAnalysis, matchedChannels: string[]) => string[];
   requiredBuckets?: string[];
 };
 
@@ -38,25 +67,68 @@ export const sharedBlocks = [
 export const includesAny = (input: string, terms: string[]): boolean =>
   terms.some((term) => input.toLowerCase().includes(term.toLowerCase()));
 
-export const chooseNoveltyVerdict = (analysis: DeepAnalysis): Verdict => {
-  if (analysis.novelty_assessment === 'post_hoc_attachment' || analysis.confirmed_facts.length === 0) {
+export const matchChannels = (input: string, channelRules: ContractChannelRule[]): string[] =>
+  Array.from(new Set(channelRules.filter((rule) => includesAny(input, rule.keywords)).map((rule) => rule.channel)));
+
+const matchedRules = (input: string, channelRules: ContractChannelRule[]): ContractChannelRule[] =>
+  channelRules.filter((rule) => includesAny(input, rule.keywords));
+
+export const choosePolarityVerdict = (
+  analysis: DeepAnalysis,
+  channelRules: ContractChannelRule[],
+  matchedChannels: string[]
+): Verdict => {
+  if (analysis.novelty_assessment === 'post_hoc_attachment' || analysis.confirmed_facts.length === 0 || matchedChannels.length === 0) {
     return Verdict.NO_EDGE;
   }
-  if (includesAny(analysis.core_claim, ['weakens', 'higher yields', 'hawkish', 'build sharply', 'slow'])) {
-    return Verdict.BEARISH;
-  }
-  if (includesAny(analysis.core_claim, ['softens', 'dovish', 'supportive', 'tight compliance'])) {
-    return Verdict.BULLISH;
-  }
+
+  const claim = analysis.core_claim.toLowerCase();
+  let bullishMatches = 0;
+  let bearishMatches = 0;
+
+  matchedRules(claim, channelRules)
+    .filter((rule) => matchedChannels.includes(rule.channel))
+    .forEach((rule) => {
+      if (rule.bullish && includesAny(claim, rule.bullish)) bullishMatches += 1;
+      if (rule.bearish && includesAny(claim, rule.bearish)) bearishMatches += 1;
+    });
+
+  if (bullishMatches > 0 && bearishMatches === 0) return Verdict.BULLISH;
+  if (bearishMatches > 0 && bullishMatches === 0) return Verdict.BEARISH;
+  if (bullishMatches === 0 && bearishMatches === 0) return Verdict.MIXED;
   return Verdict.MIXED;
 };
 
-export const choosePricingFromNovelty = (analysis: DeepAnalysis): PricingAssessment => {
-  if (analysis.novelty_assessment === 'genuinely_new') return PricingAssessment.UNDERPRICED;
-  if (analysis.novelty_assessment === 'partly_new') return PricingAssessment.MIXED;
-  if (analysis.novelty_assessment === 'recycled_background') return PricingAssessment.STALE;
+export const choosePricingFromNovelty = (
+  analysis: DeepAnalysis,
+  pricingMap: Partial<Record<NoveltyAssessment, PricingAssessment>>
+): PricingAssessment => {
+  const mapped = pricingMap[analysis.novelty_assessment];
+  if (mapped) {
+    return mapped;
+  }
   return PricingAssessment.IMPOSSIBLE_TO_ASSESS;
 };
 
 export const defaultTradeNote: TranslationResult['trade_use_note'] =
   'Use this output to shape bias and confirmation plan only; do not derive exact entry, stop, or size from this workflow.';
+
+export const rankDrivers = (orderedDrivers: string[], matchedChannels: string[]): string[] => {
+  const matchedSet = new Set(matchedChannels);
+  const rankedMatches = orderedDrivers.filter((driver) => matchedSet.has(driver));
+  const remaining = orderedDrivers.filter((driver) => !matchedSet.has(driver));
+  return [...rankedMatches, ...remaining];
+};
+
+export const buildTrace = (
+  stage: RuleTrace['stage'],
+  ruleRef: ContractRuleRef,
+  detail?: string,
+  heuristic?: boolean
+): RuleTrace => ({
+  stage,
+  rule_id: ruleRef.rule_id,
+  source_files: ruleRef.source_files,
+  detail: detail ?? ruleRef.detail,
+  heuristic: heuristic ?? ruleRef.heuristic
+});

@@ -59,6 +59,14 @@ export type DeepAnalysis = {
 
 export type HorizonSplit = { bucket: HorizonBucket; note: string };
 
+export type RuleTrace = {
+  stage: 'pipeline' | 'screen' | 'cluster' | 'analyze' | 'translate' | 'deploy';
+  rule_id: string;
+  source_files: string[];
+  detail: string;
+  heuristic?: boolean;
+};
+
 export type TranslationResult = {
   contract_id: ContractId;
   selected_channels: string[];
@@ -79,6 +87,7 @@ export type ProvenanceRecord = {
   rule_ids: string[];
   contract_override_ids: string[];
   notes: string[];
+  rule_trace: RuleTrace[];
 };
 
 export type ActiveHoursContext = {
