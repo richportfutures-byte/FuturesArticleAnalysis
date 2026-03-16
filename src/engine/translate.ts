@@ -9,7 +9,18 @@ export const runTranslate = (
   cluster: NarrativeCluster | null,
   sourceTypes: Array<any>
 ): TranslationResult => {
-  const selected_channels = override.channels.filter((c) => analysis.core_claim.toLowerCase().includes(c.split(' ')[0].toLowerCase()));
+  const claim = analysis.core_claim.toLowerCase();
+  const matchingChannels = override.channels.filter((channel) =>
+    channel
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((fragment) => fragment.length > 2)
+      .some((fragment) => claim.includes(fragment))
+  );
+  const selected_channels =
+    matchingChannels.length > 0
+      ? matchingChannels
+      : override.channelKeywords.filter((keyword) => claim.includes(keyword.toLowerCase()));
   const verdict = override.selectVerdict(analysis);
   if (selected_channels.length === 0 || verdict === Verdict.NO_EDGE) {
     throw new Error('no_edge_translation');
