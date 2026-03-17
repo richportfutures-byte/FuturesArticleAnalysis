@@ -51,7 +51,14 @@ export const DiscoveryRequestSchema = z.object({
   max_results: z.number().int().positive().default(12)
 });
 
+export const CrossContractScanRequestSchema = z.object({
+  recency_window_hours: z.number().int().positive().default(72),
+  max_results: z.number().int().positive().default(18)
+});
+
 export type RunInput = z.input<typeof RunInputSchema>;
 export type ParsedRunInput = z.output<typeof RunInputSchema>;
 export type DiscoveryRequestInput = z.input<typeof DiscoveryRequestSchema>;
 export type DiscoveryRequest = z.output<typeof DiscoveryRequestSchema>;
+export type CrossContractScanRequestInput = z.input<typeof CrossContractScanRequestSchema>;
+export type CrossContractScanRequest = z.output<typeof CrossContractScanRequestSchema>;

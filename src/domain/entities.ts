@@ -250,6 +250,33 @@ export type DiscoverySummary = {
   trace: RuleTrace[];
 };
 
+export type EventCluster = {
+  cluster_id: string;
+  label: string;
+  description: string;
+  member_candidate_ids: string[];
+  candidate_count: number;
+  suppressed_duplicate_count: number;
+  freshness_summary: string;
+  source_quality_summary: string;
+  primary_contracts: ContractId[];
+  secondary_contracts: ContractId[];
+  refinement_status: 'deterministic_only' | 'llm_refined' | 'llm_refinement_failed_fallback';
+  provenance_notes: string[];
+};
+
+export type CrossContractScanSummary = {
+  status: DiscoveryStatus;
+  provider_id: string;
+  retrieved_at: string;
+  recency_window_hours: number;
+  candidates: DiscoveryCandidate[];
+  clusters: EventCluster[];
+  issues: string[];
+  scan_mode: 'morning_coverage';
+  trace: RuleTrace[];
+};
+
 export type TranslationResult = {
   contract_id: ContractId;
   selected_channels: string[];

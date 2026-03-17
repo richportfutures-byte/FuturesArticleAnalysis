@@ -1,8 +1,16 @@
 import { startTransition, useDeferredValue, useEffect, useMemo, useState } from 'react';
 import { contractOverrides } from '../domain/contracts';
-import { Article, DiscoveryCandidate, DiscoverySummary, IntakeMode, RunOutput, SourceCompleteness } from '../domain/entities';
+import {
+  Article,
+  CrossContractScanSummary,
+  DiscoveryCandidate,
+  DiscoverySummary,
+  IntakeMode,
+  RunOutput,
+  SourceCompleteness
+} from '../domain/entities';
 import { ContractId, DeploymentUse, RunMode, SourceType } from '../domain/enums';
-import { runDiscovery } from '../engine/discover';
+import { runCrossContractMorningCoverageScan, runDiscovery } from '../engine/discover';
 import { executePipeline } from '../engine/pipeline';
 import { ClientReasonerRuntimeStatus, fetchClientReasonerStatus } from './runtimeConfig';
 import { AnalysisView } from '../ui/AnalysisView';
@@ -14,6 +22,8 @@ import { ScreeningView } from '../ui/ScreeningView';
 import { SourceIntake } from '../ui/SourceIntake';
 import { TranslationView } from '../ui/TranslationView';
 import './app.css';
+
+type DiscoveryMode = 'morning_coverage' | 'contract_specific';
 
 type IntakeDraft = {
   headline: string;
@@ -180,7 +190,9 @@ export default function App() {
   const [publishedAt, setPublishedAt] = useState(sampleDrafts[ContractId.NQ].publishedAt);
   const [sourceCompleteness, setSourceCompleteness] = useState<SourceCompleteness>(sampleDrafts[ContractId.NQ].sourceCompleteness);
   const [recencyWindowHours, setRecencyWindowHours] = useState(72);
-  const [discovery, setDiscovery] = useState<DiscoverySummary | null>(null);
+  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>('morning_coverage');
+  const [contractDiscovery, setContractDiscovery] = useState<DiscoverySummary | null>(null);
+  const [morningCoverage, setMorningCoverage] = useState<CrossContractScanSummary | null>(null);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [selectedCandidateIds, setSelectedCandidateIds] = useState<string[]>([]);
   const [importedCandidates, setImportedCandidates] = useState<DiscoveryCandidate[]>([]);
@@ -220,7 +232,8 @@ export default function App() {
     setPublisher(draft.publisher);
     setPublishedAt(draft.publishedAt);
     setSourceCompleteness(draft.sourceCompleteness);
-    setDiscovery(null);
+    setContractDiscovery(null);
+    setMorningCoverage(null);
     setSelectedCandidateIds([]);
     setImportedCandidates([]);
     setOutput(null);
@@ -252,22 +265,33 @@ export default function App() {
 
   const onDiscover = async () => {
     setDiscoveryLoading(true);
-    const nextDiscovery = await runDiscovery({
-      contract_id: contractId,
-      recency_window_hours: recencyWindowHours,
-      max_results: 12
-    });
+    const nextDiscovery =
+      discoveryMode === 'morning_coverage'
+        ? await runCrossContractMorningCoverageScan({
+            recency_window_hours: recencyWindowHours,
+            max_results: 18
+          })
+        : await runDiscovery({
+            contract_id: contractId,
+            recency_window_hours: recencyWindowHours,
+            max_results: 12
+          });
 
     startTransition(() => {
-      setDiscovery(nextDiscovery);
+      if (discoveryMode === 'morning_coverage') {
+        setMorningCoverage(nextDiscovery as CrossContractScanSummary);
+      } else {
+        setContractDiscovery(nextDiscovery as DiscoverySummary);
+      }
       setSelectedCandidateIds([]);
       setDiscoveryLoading(false);
     });
   };
 
   const onImportSelected = () => {
-    if (!discovery) return;
-    const nextImported = discovery.candidates.filter((candidate) => selectedCandidateIds.includes(candidate.id));
+    const candidatePool =
+      discoveryMode === 'morning_coverage' ? (morningCoverage?.candidates ?? []) : (contractDiscovery?.candidates ?? []);
+    const nextImported = candidatePool.filter((candidate) => selectedCandidateIds.includes(candidate.id));
     if (nextImported.length === 0) return;
 
     setImportedCandidates(nextImported);
@@ -374,9 +398,15 @@ export default function App() {
         <div className="panel panel-wide">
           <DiscoveryPanel
             contractId={contractId}
+            discoveryMode={discoveryMode}
+            setDiscoveryMode={(nextMode) => {
+              setDiscoveryMode(nextMode);
+              setSelectedCandidateIds([]);
+            }}
             recencyWindowHours={recencyWindowHours}
             setRecencyWindowHours={setRecencyWindowHours}
-            discovery={discovery}
+            discovery={contractDiscovery}
+            morningCoverage={morningCoverage}
             loading={discoveryLoading}
             selectedCandidateIds={selectedCandidateIds}
             onToggleCandidate={onToggleCandidate}

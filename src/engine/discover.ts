@@ -1,6 +1,7 @@
 import { contractOverrides } from '../domain/contracts';
 import { buildTrace, matchChannels } from '../domain/contracts/types';
 import {
+  CrossContractScanSummary,
   CandidateContractRelevance,
   DiscoveryCandidate,
   DiscoveryDirectness,
@@ -8,18 +9,21 @@ import {
   DiscoveryReviewBucket,
   DiscoveryStatus,
   DiscoverySummary,
+  EventCluster,
   RuleTrace,
   SourceCompleteness
 } from '../domain/entities';
 import { ContractId, SourceType } from '../domain/enums';
-import { DiscoveryRequest, DiscoveryRequestSchema } from '../schemas/input';
-import { DiscoverySummarySchema } from '../schemas/output';
+import { CrossContractScanRequest, CrossContractScanRequestSchema, DiscoveryRequest, DiscoveryRequestSchema } from '../schemas/input';
+import { CrossContractScanSummarySchema, DiscoverySummarySchema, EventClusterSchema } from '../schemas/output';
 
 export const DEFAULT_DISCOVERY_RECENCY_HOURS = 72;
 export const MIN_DISCOVERY_RECENCY_HOURS = 6;
 export const MAX_DISCOVERY_RECENCY_HOURS = 168;
 export const DEFAULT_DISCOVERY_MAX_RESULTS = 12;
 export const MAX_DISCOVERY_RESULTS = 18;
+export const DEFAULT_CROSS_CONTRACT_MAX_RESULTS = 18;
+export const MAX_CROSS_CONTRACT_RESULTS = 30;
 
 type SourceRegistryEntry = {
   name: string;
@@ -30,6 +34,7 @@ type SourceRegistryEntry = {
 };
 
 type DiscoveryProviderQuery = DiscoveryQueryPreset & {
+  contract_id: ContractId;
   max_results: number;
 };
 
@@ -58,6 +63,94 @@ type DiscoveryProviderInvocation = {
   issue?: string;
   retrieved_at: string;
 };
+
+type DuplicateCluster = {
+  id: string;
+  tokens: string[];
+  members: DiscoveryCandidate[];
+};
+
+type DiscoveryDedupeResult = {
+  candidates: DiscoveryCandidate[];
+  duplicateGroups: DuplicateCluster[];
+  duplicateCountByCandidateId: Record<string, number>;
+};
+
+type CandidateProfile = {
+  candidate: DiscoveryCandidate;
+  tokens: string[];
+  anchorPhrases: string[];
+  eventTokens: string[];
+  exposureContracts: ContractId[];
+  recencyTime: number;
+};
+
+type ExposureMap = {
+  primary_contracts: ContractId[];
+  secondary_contracts: ContractId[];
+  contract_scores: Record<ContractId, number>;
+};
+
+type PreClusterSummary = {
+  cluster_id: string;
+  label: string;
+  description: string;
+  member_candidate_ids: string[];
+  candidate_count: number;
+  suppressed_duplicate_count: number;
+  freshness_summary: string;
+  source_quality_summary: string;
+  primary_contracts: ContractId[];
+  secondary_contracts: ContractId[];
+  provenance_notes: string[];
+};
+
+type RefinementCandidateMetadata = Pick<
+  DiscoveryCandidate,
+  | 'id'
+  | 'title'
+  | 'snippet'
+  | 'source_name'
+  | 'source_domain'
+  | 'authority_tier'
+  | 'directness'
+  | 'published_at'
+  | 'retrieved_at'
+  | 'duplication_cluster_id'
+  | 'discovery_query'
+  | 'review_bucket'
+  | 'contract_relevance_candidates'
+> & {
+  duplicate_suppressed_count: number;
+};
+
+type RefinedClusterTransport = Omit<EventCluster, 'refinement_status'> & {
+  refinement_status?: EventCluster['refinement_status'];
+};
+
+type ClusterRefinementSuccess = {
+  status: 'refined';
+  clusters: RefinedClusterTransport[];
+  provider_id?: string;
+};
+
+type ClusterRefinementUnavailable = {
+  status: 'refinement_unavailable';
+  pre_clusters: PreClusterSummary[];
+  issue?: string;
+  provider_id?: string;
+};
+
+type ClusterRefinementResponse = ClusterRefinementSuccess | ClusterRefinementUnavailable;
+
+export interface EventClusterRefinementProvider {
+  providerId: string;
+  configured: boolean;
+  refine: (request: {
+    pre_clusters: PreClusterSummary[];
+    candidates_metadata: RefinementCandidateMetadata[];
+  }) => Promise<ClusterRefinementResponse>;
+}
 
 export interface DiscoveryProvider {
   providerId: string;
@@ -120,6 +213,41 @@ const QUERY_PRESETS: Record<ContractId, DiscoveryQueryPreset[]> = {
   ]
 };
 
+const titleStopwords = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'from',
+  'into',
+  'amid',
+  'after',
+  'before',
+  'over',
+  'under',
+  'about',
+  'that',
+  'this',
+  'while',
+  'says',
+  'said'
+]);
+
+const CROSS_CONTRACT_EVENT_VOCABULARY = Array.from(
+  new Set(
+    [
+      ...Object.values(QUERY_PRESETS).flatMap((presets) =>
+        presets.flatMap((preset) => [preset.label, ...preset.focus_tags, preset.query].join(' ').toLowerCase().split(/[^a-z0-9]+/))
+      ),
+      ...Object.values(contractOverrides).flatMap((override) =>
+        override.channelRules.flatMap((rule) => rule.keywords.join(' ').toLowerCase().split(/[^a-z0-9]+/))
+      )
+    ]
+      .map((token) => token.trim())
+      .filter((token) => token.length > 2 && !titleStopwords.has(token))
+  )
+);
+
 const commentaryLexicon = ['opinion', 'column', 'analysis', 'commentary', 'editorial'];
 
 const authorityScoreByTier: Record<DiscoveryCandidate['authority_tier'], number> = {
@@ -171,11 +299,18 @@ const resolveFunctionProviderConfig = (): FunctionProviderConfig => ({
   endpoint: readRuntimeEnv('DISCOVERY_ENDPOINT') ?? '/.netlify/functions/discover'
 });
 
+const resolveSearchMode = (): 'live' | 'simulated' => (readRuntimeEnv('VITE_SEARCH_MODE') === 'simulated' ? 'simulated' : 'live');
+
 const normalizeRecencyWindowHours = (requestedHours: number) =>
   Math.min(MAX_DISCOVERY_RECENCY_HOURS, Math.max(MIN_DISCOVERY_RECENCY_HOURS, Math.round(requestedHours)));
 
 const normalizeMaxResults = (requestedResults: number) =>
   Math.min(MAX_DISCOVERY_RESULTS, Math.max(4, Math.round(requestedResults)));
+
+const normalizeCrossContractMaxResults = (requestedResults: number) =>
+  Math.min(MAX_CROSS_CONTRACT_RESULTS, Math.max(8, Math.round(requestedResults)));
+
+export const getDiscoveryQueryPresets = (contractId: ContractId): DiscoveryQueryPreset[] => QUERY_PRESETS[contractId];
 
 const extractDomain = (value: string | null | undefined): string | null => {
   if (!value) return null;
@@ -203,7 +338,7 @@ const normalizeText = (value: string) => value.toLowerCase().replace(/[^a-z0-9\s
 const tokenizeTitle = (title: string): string[] =>
   normalizeText(title)
     .split(/\s+/)
-    .filter((token) => token.length > 2 && !['the', 'and', 'for', 'with', 'from', 'into', 'amid'].includes(token));
+    .filter((token) => token.length > 2 && !titleStopwords.has(token));
 
 const jaccardSimilarity = (left: string[], right: string[]): number => {
   const leftSet = new Set(left);
@@ -298,35 +433,46 @@ const buildClusterSuggestion = (
   return selected?.matched_focus.length ? selected.matched_focus.slice(0, 2).join(' + ') : preset.label;
 };
 
-const clusterDuplicateCandidates = (candidates: DiscoveryCandidate[]): DiscoveryCandidate[] => {
-  const clusters: Array<{ id: string; tokens: string[]; members: DiscoveryCandidate[] }> = [];
+const dedupeDiscoveryCandidates = (candidates: DiscoveryCandidate[]): DiscoveryDedupeResult => {
+  const duplicateGroups: DuplicateCluster[] = [];
+  const duplicateCountByCandidateId: Record<string, number> = {};
 
   candidates
     .sort((left, right) => right.total_rank_score - left.total_rank_score)
     .forEach((candidate) => {
       const tokens = tokenizeTitle(candidate.title);
-      const existingCluster = clusters.find((cluster) => jaccardSimilarity(cluster.tokens, tokens) >= 0.68);
+      const existingCluster = duplicateGroups.find((cluster) => jaccardSimilarity(cluster.tokens, tokens) >= 0.68);
 
       if (existingCluster) {
         existingCluster.members.push(candidate);
         return;
       }
 
-      clusters.push({ id: `dup-${clusters.length + 1}`, tokens, members: [candidate] });
+      duplicateGroups.push({ id: `dup-${duplicateGroups.length + 1}`, tokens, members: [candidate] });
     });
 
-  return clusters.map((cluster) => {
+  const dedupedCandidates = duplicateGroups.map((cluster) => {
     const [primary, ...duplicates] = cluster.members.sort((left, right) => right.total_rank_score - left.total_rank_score);
+    duplicateCountByCandidateId[primary.id] = duplicates.length;
+
+    const mergedQueries = Array.from(new Set(cluster.members.map((member) => member.discovery_query)));
+    const mergedProvenanceNotes = Array.from(new Set(cluster.members.flatMap((member) => member.provenance_notes)));
+
     return {
       ...primary,
       duplication_cluster_id: cluster.id,
-      provenance_notes:
-        duplicates.length > 0
-          ? [...primary.provenance_notes, `Suppressed ${duplicates.length} near-duplicate coverage item(s) in ${cluster.id}.`]
-          : primary.provenance_notes
+      provenance_notes: [
+        ...mergedProvenanceNotes,
+        ...(mergedQueries.length > 1 ? [`Candidate matched ${mergedQueries.length} query families during discovery dedupe.`] : []),
+        ...(duplicates.length > 0 ? [`Suppressed ${duplicates.length} near-duplicate coverage item(s) in ${cluster.id}.`] : [])
+      ]
     };
   });
+
+  return { candidates: dedupedCandidates, duplicateGroups, duplicateCountByCandidateId };
 };
+
+const clusterDuplicateCandidates = (candidates: DiscoveryCandidate[]): DiscoveryCandidate[] => dedupeDiscoveryCandidates(candidates).candidates;
 
 const createDiscoveryCandidate = (
   contractId: ContractId,
@@ -396,6 +542,369 @@ const createDiscoveryCandidate = (
   };
 };
 
+const overlapCount = <T,>(left: T[], right: T[]): number => {
+  const rightSet = new Set(right);
+  return left.reduce((count, value) => count + (rightSet.has(value) ? 1 : 0), 0);
+};
+
+const buildAnchorPhrases = (title: string): string[] => {
+  const tokens = tokenizeTitle(title);
+  const phrases: string[] = [];
+
+  for (let index = 0; index < tokens.length - 1; index += 1) {
+    phrases.push(`${tokens[index]} ${tokens[index + 1]}`);
+    if (index < tokens.length - 2) {
+      phrases.push(`${tokens[index]} ${tokens[index + 1]} ${tokens[index + 2]}`);
+    }
+  }
+
+  return Array.from(new Set(phrases)).slice(0, 8);
+};
+
+const buildCandidateProfile = (candidate: DiscoveryCandidate): CandidateProfile => {
+  const tokens = tokenizeTitle(candidate.title);
+  const eventTokens = tokens.filter((token) => CROSS_CONTRACT_EVENT_VOCABULARY.includes(token));
+  const exposureContracts = candidate.contract_relevance_candidates.map((entry) => entry.contract_id);
+  const recencyTime = new Date(candidate.published_at ?? candidate.retrieved_at).getTime();
+
+  return {
+    candidate,
+    tokens,
+    anchorPhrases: buildAnchorPhrases(candidate.title),
+    eventTokens,
+    exposureContracts,
+    recencyTime
+  };
+};
+
+const buildClusterSeedLabel = (profiles: CandidateProfile[]): string => {
+  const anchorCounts = new Map<string, number>();
+  profiles.forEach((profile) => {
+    profile.anchorPhrases.forEach((phrase) => {
+      anchorCounts.set(phrase, (anchorCounts.get(phrase) ?? 0) + 1);
+    });
+  });
+
+  const anchors = Array.from(anchorCounts.entries())
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([phrase]) => phrase);
+
+  if (anchors.length > 0) {
+    return anchors
+      .slice(0, 2)
+      .join(' / ')
+      .replace(/\b\w/g, (value) => value.toUpperCase());
+  }
+
+  return profiles[0]?.candidate.title ?? 'Cross-contract event';
+};
+
+const buildClusterSeedDescription = (profiles: CandidateProfile[]): string => {
+  const leadCandidate = [...profiles]
+    .sort((left, right) => right.candidate.total_rank_score - left.candidate.total_rank_score)[0]
+    ?.candidate;
+
+  if (!leadCandidate) return 'No candidate detail is available for this event cluster.';
+
+  const exposureNote =
+    leadCandidate.contract_relevance_candidates.length > 0
+      ? `Cross-contract relevance surfaces through ${leadCandidate.contract_relevance_candidates
+          .map((entry) => `${entry.contract_id} ${entry.fit}`)
+          .join(', ')}.`
+      : 'Cross-contract relevance is limited and should be reviewed manually.';
+
+  return `${truncate(leadCandidate.snippet, 180)} ${exposureNote}`;
+};
+
+const summarizeFreshness = (members: DiscoveryCandidate[], referenceTime: string): string => {
+  if (members.length === 0) return 'No freshness detail available.';
+
+  const ages = members.map((member) => {
+    const timestamp = new Date(member.published_at ?? member.retrieved_at).getTime();
+    return Math.max(0, (new Date(referenceTime).getTime() - timestamp) / 36e5);
+  });
+
+  const youngestAge = Math.min(...ages);
+  const oldestAge = Math.max(...ages);
+  const latestCount = ages.filter((age) => age <= 12).length;
+
+  if (oldestAge <= 6) return `All coverage is within ${Math.ceil(oldestAge)}h of retrieval.`;
+  if (latestCount === members.length) return `All ${members.length} member(s) are within 12h; latest item is ${youngestAge.toFixed(1)}h old.`;
+  return `${latestCount} member(s) are within 12h; cluster spans ${oldestAge.toFixed(1)}h of coverage.`;
+};
+
+const summarizeSourceQuality = (members: DiscoveryCandidate[]): string => {
+  const authorityCounts = members.reduce(
+    (counts, member) => {
+      counts[member.authority_tier] += 1;
+      return counts;
+    },
+    { tier_1: 0, tier_2: 0, unlisted: 0 }
+  );
+
+  const directnessCounts = members.reduce(
+    (counts, member) => {
+      counts[member.directness] += 1;
+      return counts;
+    },
+    { primary_release: 0, reported_summary: 0, commentary: 0 }
+  );
+
+  return `${authorityCounts.tier_1} tier-1, ${authorityCounts.tier_2} tier-2, ${authorityCounts.unlisted} unlisted | ${directnessCounts.primary_release} primary, ${directnessCounts.reported_summary} reported, ${directnessCounts.commentary} commentary`;
+};
+
+const buildExposureMap = (members: DiscoveryCandidate[]): ExposureMap => {
+  const contractScores = Object.values(ContractId).reduce<Record<ContractId, number>>(
+    (scores, contractId) => ({ ...scores, [contractId]: 0 }),
+    {} as Record<ContractId, number>
+  );
+  const fitWeight: Record<CandidateContractRelevance['fit'], number> = {
+    primary: 1,
+    secondary: 0.58,
+    low: 0.25
+  };
+  const nonLowFitCounts = Object.values(ContractId).reduce<Record<ContractId, number>>(
+    (counts, contractId) => ({ ...counts, [contractId]: 0 }),
+    {} as Record<ContractId, number>
+  );
+
+  members.forEach((member) => {
+    member.contract_relevance_candidates.forEach((entry) => {
+      const focusBreadthWeight = 1 + Math.min(2, Math.max(0, entry.matched_focus.length - 1)) * 0.2;
+      contractScores[entry.contract_id] += Number((member.total_rank_score * fitWeight[entry.fit] * focusBreadthWeight).toFixed(4));
+      if (entry.fit !== 'low') {
+        nonLowFitCounts[entry.contract_id] += 1;
+      }
+    });
+  });
+
+  const sortedContracts = Object.values(ContractId).sort((left, right) => contractScores[right] - contractScores[left]);
+  const maxScore = contractScores[sortedContracts[0]] ?? 0;
+  const primaryContracts = sortedContracts.filter(
+    (contractId) =>
+      contractScores[contractId] > 0 &&
+      nonLowFitCounts[contractId] > 0 &&
+      (contractScores[contractId] >= maxScore * 0.72 || contractId === sortedContracts[0])
+  );
+  const secondaryContracts = sortedContracts.filter(
+    (contractId) =>
+      !primaryContracts.includes(contractId) &&
+      contractScores[contractId] >= Math.max(0.24, maxScore * 0.28) &&
+      nonLowFitCounts[contractId] > 0
+  );
+
+  return {
+    primary_contracts: primaryContracts,
+    secondary_contracts: secondaryContracts,
+    contract_scores: contractScores
+  };
+};
+
+const calculateProfileSimilarity = (
+  left: CandidateProfile,
+  right: CandidateProfile
+): { score: number; titleSimilarity: number; anchorOverlap: number; eventOverlap: number; exposureOverlap: number } => {
+  const titleSimilarity = jaccardSimilarity(left.tokens, right.tokens);
+  const anchorOverlap = overlapCount(left.anchorPhrases, right.anchorPhrases);
+  const eventOverlap = overlapCount(left.eventTokens, right.eventTokens);
+  const exposureOverlap = overlapCount(left.exposureContracts, right.exposureContracts);
+  const score = Number(
+    (
+      (titleSimilarity * 0.45) +
+      (Math.min(1, anchorOverlap / 2) * 0.25) +
+      (Math.min(1, eventOverlap / 2) * 0.2) +
+      (Math.min(1, exposureOverlap / 2) * 0.1)
+    ).toFixed(3)
+  );
+
+  return { score, titleSimilarity, anchorOverlap, eventOverlap, exposureOverlap };
+};
+
+const simpleChecksum = (value: string): string => {
+  let checksum = 0;
+  for (let index = 0; index < value.length; index += 1) {
+    checksum = (checksum * 31 + value.charCodeAt(index)) >>> 0;
+  }
+  return checksum.toString(36);
+};
+
+const createStableClusterId = (prefix: 'pre' | 'event', memberCandidateIds: string[]): string =>
+  `${prefix}-${simpleChecksum(memberCandidateIds.slice().sort().join('|'))}`;
+
+const buildPreClusterSummaries = (
+  candidates: DiscoveryCandidate[],
+  duplicateCountByCandidateId: Record<string, number>,
+  referenceTime: string
+): PreClusterSummary[] => {
+  const profiles = candidates.map(buildCandidateProfile);
+  const clusters: Array<{ profiles: CandidateProfile[]; rationale: string[] }> = [];
+
+  profiles
+    .sort((left, right) => right.candidate.total_rank_score - left.candidate.total_rank_score)
+    .forEach((profile) => {
+      let bestClusterIndex = -1;
+      let bestScore = 0;
+
+      clusters.forEach((cluster, index) => {
+        const leadProfile = cluster.profiles[0];
+        const similarity = calculateProfileSimilarity(profile, leadProfile);
+        const hoursApart = Math.abs(profile.recencyTime - leadProfile.recencyTime) / 36e5;
+        const mergeable =
+          hoursApart <= 36 &&
+          (similarity.titleSimilarity >= 0.42 ||
+            similarity.anchorOverlap >= 1 ||
+            (similarity.eventOverlap >= 2 && similarity.exposureOverlap >= 1) ||
+            similarity.score >= 0.58);
+
+        if (mergeable && similarity.score > bestScore) {
+          bestScore = similarity.score;
+          bestClusterIndex = index;
+        }
+      });
+
+      if (bestClusterIndex >= 0) {
+        clusters[bestClusterIndex].profiles.push(profile);
+        clusters[bestClusterIndex].rationale.push(
+          `Merged ${profile.candidate.id} into ${clusters[bestClusterIndex].profiles[0].candidate.id} using semantic score ${bestScore.toFixed(2)}.`
+        );
+        return;
+      }
+
+      clusters.push({
+        profiles: [profile],
+        rationale: [`Started a new pre-cluster from ${profile.candidate.id} using title/event anchors.`]
+      });
+    });
+
+  return clusters
+    .map((cluster) => {
+      const members = cluster.profiles
+        .map((profile) => profile.candidate)
+        .sort((left, right) => right.total_rank_score - left.total_rank_score);
+      const memberCandidateIds = members.map((member) => member.id);
+      const exposureMap = buildExposureMap(members);
+      const label = buildClusterSeedLabel(cluster.profiles);
+      const description = buildClusterSeedDescription(cluster.profiles);
+      const suppressedDuplicateCount = members.reduce(
+        (count, member) => count + (duplicateCountByCandidateId[member.id] ?? 0),
+        0
+      );
+
+      return {
+        cluster_id: createStableClusterId('pre', memberCandidateIds),
+        label,
+        description,
+        member_candidate_ids: memberCandidateIds,
+        candidate_count: memberCandidateIds.length,
+        suppressed_duplicate_count: suppressedDuplicateCount,
+        freshness_summary: summarizeFreshness(members, referenceTime),
+        source_quality_summary: summarizeSourceQuality(members),
+        primary_contracts: exposureMap.primary_contracts,
+        secondary_contracts: exposureMap.secondary_contracts,
+        provenance_notes: [
+          ...cluster.rationale,
+          `Seed label derived from title anchors: ${label}.`,
+          ...(suppressedDuplicateCount > 0 ? [`Suppressed duplicate roll-up preserved ${suppressedDuplicateCount} additional coverage item(s).`] : [])
+        ]
+      };
+    })
+    .sort((left, right) => right.candidate_count - left.candidate_count || left.label.localeCompare(right.label));
+};
+
+const convertPreClusterToEventCluster = (
+  preCluster: PreClusterSummary,
+  refinementStatus: EventCluster['refinement_status']
+): EventCluster =>
+  EventClusterSchema.parse({
+    ...preCluster,
+    cluster_id: createStableClusterId('event', preCluster.member_candidate_ids),
+    refinement_status: refinementStatus
+  });
+
+const createRefinementCandidateMetadata = (
+  candidate: DiscoveryCandidate,
+  duplicateCountByCandidateId: Record<string, number>
+): RefinementCandidateMetadata => ({
+  id: candidate.id,
+  title: candidate.title,
+  snippet: candidate.snippet,
+  source_name: candidate.source_name,
+  source_domain: candidate.source_domain,
+  authority_tier: candidate.authority_tier,
+  directness: candidate.directness,
+  published_at: candidate.published_at,
+  retrieved_at: candidate.retrieved_at,
+  duplication_cluster_id: candidate.duplication_cluster_id,
+  discovery_query: candidate.discovery_query,
+  review_bucket: candidate.review_bucket,
+  contract_relevance_candidates: candidate.contract_relevance_candidates,
+  duplicate_suppressed_count: duplicateCountByCandidateId[candidate.id] ?? 0
+});
+
+const validateAndFinalizeRefinedClusters = (
+  clusters: RefinedClusterTransport[],
+  candidates: DiscoveryCandidate[],
+  duplicateCountByCandidateId: Record<string, number>,
+  retrievedAt: string
+): EventCluster[] => {
+  const candidateMap = new Map(candidates.map((candidate) => [candidate.id, candidate] as const));
+  const allowedContracts = new Set(Object.values(ContractId));
+  const assignedCandidates = new Set<string>();
+
+  const finalizedClusters = clusters.map((cluster) => {
+    const memberCandidates = cluster.member_candidate_ids.map((candidateId) => candidateMap.get(candidateId) ?? null);
+    if (memberCandidates.some((candidate) => !candidate)) {
+      throw new Error('Refinement returned unknown candidate ids.');
+    }
+
+    cluster.member_candidate_ids.forEach((candidateId) => {
+      if (assignedCandidates.has(candidateId)) {
+        throw new Error('Refinement assigned a candidate to multiple clusters.');
+      }
+      assignedCandidates.add(candidateId);
+    });
+
+    const members = memberCandidates.filter((candidate): candidate is DiscoveryCandidate => Boolean(candidate));
+    const deterministicExposure = buildExposureMap(members);
+    const primaryContracts = Array.from(
+      new Set(cluster.primary_contracts.filter((contractId) => allowedContracts.has(contractId)))
+    ).filter((contractId) => deterministicExposure.contract_scores[contractId] > 0);
+    const secondaryContracts = Array.from(
+      new Set(cluster.secondary_contracts.filter((contractId) => allowedContracts.has(contractId)))
+    ).filter((contractId) => !primaryContracts.includes(contractId) && deterministicExposure.contract_scores[contractId] > 0);
+    const finalPrimaryContracts = primaryContracts.length > 0 ? primaryContracts : deterministicExposure.primary_contracts;
+    const finalSecondaryContracts =
+      secondaryContracts.length > 0
+        ? secondaryContracts.filter((contractId) => !finalPrimaryContracts.includes(contractId))
+        : deterministicExposure.secondary_contracts.filter((contractId) => !finalPrimaryContracts.includes(contractId));
+
+    return EventClusterSchema.parse({
+      cluster_id: createStableClusterId('event', cluster.member_candidate_ids),
+      label: truncate(cluster.label, 120),
+      description: truncate(cluster.description, 240),
+      member_candidate_ids: cluster.member_candidate_ids,
+      candidate_count: cluster.member_candidate_ids.length,
+      suppressed_duplicate_count: members.reduce((count, member) => count + (duplicateCountByCandidateId[member.id] ?? 0), 0),
+      freshness_summary: summarizeFreshness(members, retrievedAt),
+      source_quality_summary: summarizeSourceQuality(members),
+      primary_contracts: finalPrimaryContracts,
+      secondary_contracts: finalSecondaryContracts,
+      refinement_status: 'llm_refined',
+      provenance_notes: Array.from(new Set(cluster.provenance_notes)).slice(0, 8)
+    });
+  });
+
+  if (assignedCandidates.size !== candidates.length) {
+    throw new Error('Refinement did not preserve a complete candidate partition.');
+  }
+
+  return finalizedClusters.sort((left, right) => {
+    const leftTopScore = Math.max(...left.member_candidate_ids.map((candidateId) => candidateMap.get(candidateId)?.total_rank_score ?? 0));
+    const rightTopScore = Math.max(...right.member_candidate_ids.map((candidateId) => candidateMap.get(candidateId)?.total_rank_score ?? 0));
+    return rightTopScore - leftTopScore;
+  });
+};
+
 const buildEmptySummary = (
   contractId: ContractId,
   queryPresets: DiscoveryQueryPreset[],
@@ -423,6 +932,7 @@ const normalizeProviderRequest = (input: DiscoveryRequest): DiscoveryProviderReq
   const maxResults = normalizeMaxResults(input.max_results);
   const queryPresets = QUERY_PRESETS[input.contract_id].map((preset) => ({
     ...preset,
+    contract_id: input.contract_id,
     max_results: Math.max(2, Math.min(4, Math.ceil(maxResults / QUERY_PRESETS[input.contract_id].length)))
   }));
 
@@ -552,6 +1062,10 @@ const createUnconfiguredProvider = (): DiscoveryProvider => ({
 });
 
 const resolveDiscoveryProvider = (): DiscoveryProvider => {
+  if (resolveSearchMode() === 'simulated') {
+    return createUnconfiguredProvider();
+  }
+
   if (typeof window !== 'undefined') {
     return createNetlifyFunctionDiscoveryProvider(resolveFunctionProviderConfig());
   }
@@ -582,6 +1096,96 @@ const buildDiscoveryTrace = (
     detail,
     heuristic
   );
+
+const buildCrossContractTrace = (
+  detail: string,
+  recencyWindowHours: number,
+  maxResults: number,
+  stage: RuleTrace['stage'] = 'discover',
+  heuristic = false
+): RuleTrace => ({
+  stage,
+  rule_id: stage === 'cluster' ? 'DISCOVER_MORNING_COVERAGE_CLUSTERING' : 'DISCOVER_MORNING_COVERAGE',
+  source_files: [
+    'docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx',
+    'docs/source_of_truth/contract_prompt_library/README.md',
+    ...Array.from(new Set(Object.values(contractOverrides).flatMap((override) => override.source_files)))
+  ],
+  detail: `Morning coverage scan with recency ${recencyWindowHours}h and max ${maxResults}. ${detail}`,
+  heuristic
+});
+
+type ClusterRefinementFunctionConfig = {
+  endpoint: string;
+};
+
+const resolveClusterRefinementFunctionConfig = (): ClusterRefinementFunctionConfig => ({
+  endpoint: readRuntimeEnv('REFINE_CLUSTERS_ENDPOINT') ?? '/.netlify/functions/refine-clusters'
+});
+
+export const createNetlifyFunctionEventClusterRefinementProvider = (
+  config: ClusterRefinementFunctionConfig
+): EventClusterRefinementProvider => ({
+  providerId: `netlify-function:${config.endpoint}`,
+  configured: true,
+  refine: async (request) => {
+    const response = await fetch(config.endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(request)
+    });
+
+    const payload = (await response.json()) as {
+      status?: ClusterRefinementResponse['status'];
+      clusters?: RefinedClusterTransport[];
+      pre_clusters?: PreClusterSummary[];
+      issue?: string;
+      providerId?: string;
+    };
+
+    if (!response.ok) {
+      return {
+        status: 'refinement_unavailable',
+        pre_clusters: request.pre_clusters,
+        issue: payload.issue ?? `${response.status} ${response.statusText}`,
+        provider_id: payload.providerId
+      };
+    }
+
+    if (payload.status === 'refined' && Array.isArray(payload.clusters)) {
+      return {
+        status: 'refined',
+        clusters: payload.clusters,
+        provider_id: payload.providerId
+      };
+    }
+
+    return {
+      status: 'refinement_unavailable',
+      pre_clusters: request.pre_clusters,
+      issue: payload.issue,
+      provider_id: payload.providerId
+    };
+  }
+});
+
+const createUnconfiguredEventClusterRefinementProvider = (): EventClusterRefinementProvider => ({
+  providerId: 'unconfigured-cluster-refiner',
+  configured: false,
+  refine: async (request) => ({
+    status: 'refinement_unavailable',
+    pre_clusters: request.pre_clusters,
+    issue: 'Cluster refinement is unavailable because no server-side refinement provider is configured.'
+  })
+});
+
+const resolveEventClusterRefinementProvider = (): EventClusterRefinementProvider => {
+  if (typeof window === 'undefined') {
+    return createUnconfiguredEventClusterRefinementProvider();
+  }
+
+  return createNetlifyFunctionEventClusterRefinementProvider(resolveClusterRefinementFunctionConfig());
+};
 
 export const runDiscovery = async (
   input: DiscoveryRequest,
@@ -726,6 +1330,294 @@ export const runDiscovery = async (
         ? []
         : ['Discovery completed but returned no candidate items within the curated source set and active recency window.'],
     bucket_counts: bucketCounts,
+    trace
+  });
+};
+
+const normalizeCrossContractProviderRequest = (input: CrossContractScanRequest): DiscoveryProviderRequest => {
+  const recencyWindowHours = normalizeRecencyWindowHours(input.recency_window_hours);
+  const maxResults = normalizeCrossContractMaxResults(input.max_results);
+  const queryPresets = Object.values(ContractId).flatMap((contractId) =>
+    QUERY_PRESETS[contractId].map((preset) => ({
+      ...preset,
+      contract_id: contractId,
+      max_results: 2
+    }))
+  );
+
+  return {
+    contract_id: ContractId.NQ,
+    recency_window_hours: recencyWindowHours,
+    max_results: maxResults,
+    query_presets: queryPresets
+  };
+};
+
+const sortEventClusters = (clusters: EventCluster[], candidates: DiscoveryCandidate[]): EventCluster[] => {
+  const candidateMap = new Map(candidates.map((candidate) => [candidate.id, candidate] as const));
+
+  return [...clusters].sort((left, right) => {
+    const leftMembers = left.member_candidate_ids.map((candidateId) => candidateMap.get(candidateId)).filter(Boolean) as DiscoveryCandidate[];
+    const rightMembers = right.member_candidate_ids.map((candidateId) => candidateMap.get(candidateId)).filter(Boolean) as DiscoveryCandidate[];
+    const leftPriority =
+      Math.max(...leftMembers.map((candidate) => candidate.total_rank_score), 0) +
+      Math.max(...leftMembers.map((candidate) => candidate.authority_score), 0) * 0.25 +
+      Math.max(...leftMembers.map((candidate) => candidate.freshness_score), 0) * 0.15;
+    const rightPriority =
+      Math.max(...rightMembers.map((candidate) => candidate.total_rank_score), 0) +
+      Math.max(...rightMembers.map((candidate) => candidate.authority_score), 0) * 0.25 +
+      Math.max(...rightMembers.map((candidate) => candidate.freshness_score), 0) * 0.15;
+
+    return rightPriority - leftPriority;
+  });
+};
+
+export const runCrossContractMorningCoverageScan = async (
+  input: CrossContractScanRequest,
+  provider: DiscoveryProvider = resolveDiscoveryProvider(),
+  refiner: EventClusterRefinementProvider = resolveEventClusterRefinementProvider()
+): Promise<CrossContractScanSummary> => {
+  const parsedInput = CrossContractScanRequestSchema.safeParse(input);
+  const trace: RuleTrace[] = [];
+
+  if (!parsedInput.success) {
+    return CrossContractScanSummarySchema.parse({
+      status: 'error',
+      provider_id: provider.providerId,
+      retrieved_at: new Date().toISOString(),
+      recency_window_hours: DEFAULT_DISCOVERY_RECENCY_HOURS,
+      candidates: [],
+      clusters: [],
+      issues: parsedInput.error.issues.map((issue) => `${issue.path.join('.') || 'discovery'} ${issue.message}`),
+      scan_mode: 'morning_coverage',
+      trace
+    });
+  }
+
+  const request = normalizeCrossContractProviderRequest(parsedInput.data);
+  trace.push(
+    buildCrossContractTrace(
+      `Candidate pool normalized across ${request.query_presets.length} presets for ${Object.values(ContractId).join(', ')}.`,
+      request.recency_window_hours,
+      request.max_results
+    )
+  );
+
+  if (!provider.configured) {
+    trace.push(
+      buildCrossContractTrace(
+        `Discovery provider ${provider.providerId} is unconfigured.`,
+        request.recency_window_hours,
+        request.max_results
+      )
+    );
+
+    return CrossContractScanSummarySchema.parse({
+      status: 'unconfigured',
+      provider_id: provider.providerId,
+      retrieved_at: new Date().toISOString(),
+      recency_window_hours: request.recency_window_hours,
+      candidates: [],
+      clusters: [],
+      issues: ['Live discovery is unavailable because no discovery provider is configured.'],
+      scan_mode: 'morning_coverage',
+      trace
+    });
+  }
+
+  let invocation: DiscoveryProviderInvocation;
+  try {
+    invocation = await provider.search(request);
+  } catch (error) {
+    const issue = error instanceof Error ? error.message : 'unknown discovery provider error';
+    trace.push(
+      buildCrossContractTrace(
+        `Discovery provider ${provider.providerId} threw an error: ${issue}`,
+        request.recency_window_hours,
+        request.max_results,
+        'discover',
+        true
+      )
+    );
+
+    return CrossContractScanSummarySchema.parse({
+      status: 'error',
+      provider_id: provider.providerId,
+      retrieved_at: new Date().toISOString(),
+      recency_window_hours: request.recency_window_hours,
+      candidates: [],
+      clusters: [],
+      issues: [issue],
+      scan_mode: 'morning_coverage',
+      trace
+    });
+  }
+
+  if (invocation.issue) {
+    trace.push(
+      buildCrossContractTrace(
+        `Discovery provider ${provider.providerId} failed: ${invocation.issue}`,
+        request.recency_window_hours,
+        request.max_results,
+        'discover',
+        true
+      )
+    );
+
+    return CrossContractScanSummarySchema.parse({
+      status: 'error',
+      provider_id: provider.providerId,
+      retrieved_at: invocation.retrieved_at,
+      recency_window_hours: request.recency_window_hours,
+      candidates: [],
+      clusters: [],
+      issues: [invocation.issue],
+      scan_mode: 'morning_coverage',
+      trace
+    });
+  }
+
+  const retrievedAt = invocation.retrieved_at;
+  const dedupeResult = dedupeDiscoveryCandidates(
+    invocation.items.map((item) => {
+      const preset = request.query_presets.find((entry) => entry.preset_id === item.query_preset_id) ?? request.query_presets[0];
+      return {
+        ...createDiscoveryCandidate(preset.contract_id, preset, item, provider.providerId, retrievedAt),
+        recency_window_hours: request.recency_window_hours
+      };
+    })
+  );
+  const candidates = dedupeResult.candidates
+    .sort((left, right) => right.total_rank_score - left.total_rank_score)
+    .slice(0, request.max_results);
+
+  trace.push(
+    buildCrossContractTrace(
+      `Discovery provider ${provider.providerId} returned ${invocation.items.length} raw item(s); ${candidates.length} deduplicated candidate(s) survived normalization for the morning pool.`,
+      request.recency_window_hours,
+      request.max_results,
+      'discover',
+      true
+    )
+  );
+
+  if (candidates.length === 0) {
+    return CrossContractScanSummarySchema.parse({
+      status: 'empty',
+      provider_id: provider.providerId,
+      retrieved_at: retrievedAt,
+      recency_window_hours: request.recency_window_hours,
+      candidates: [],
+      clusters: [],
+      issues: ['Morning coverage scan completed but returned no candidate items within the active recency window.'],
+      scan_mode: 'morning_coverage',
+      trace
+    });
+  }
+
+  const preClusters = buildPreClusterSummaries(candidates, dedupeResult.duplicateCountByCandidateId, retrievedAt);
+  trace.push(
+    buildCrossContractTrace(
+      `Deterministic pre-clustering produced ${preClusters.length} coarse group(s) from ${candidates.length} deduplicated candidate(s).`,
+      request.recency_window_hours,
+      request.max_results,
+      'cluster',
+      true
+    )
+  );
+
+  let clusters = sortEventClusters(
+    preClusters.map((preCluster) => convertPreClusterToEventCluster(preCluster, 'deterministic_only')),
+    candidates
+  );
+  const issues: string[] = [];
+
+  if (!refiner.configured) {
+    trace.push(
+      buildCrossContractTrace(
+        `Cluster refiner ${refiner.providerId} is unavailable; deterministic pre-clusters are returned directly.`,
+        request.recency_window_hours,
+        request.max_results,
+        'cluster'
+      )
+    );
+  } else {
+    const refinementResponse = await refiner.refine({
+      pre_clusters: preClusters,
+      candidates_metadata: candidates.map((candidate) =>
+        createRefinementCandidateMetadata(candidate, dedupeResult.duplicateCountByCandidateId)
+      )
+    });
+
+    if (refinementResponse.status === 'refined') {
+      try {
+        clusters = sortEventClusters(
+          validateAndFinalizeRefinedClusters(
+            refinementResponse.clusters,
+            candidates,
+            dedupeResult.duplicateCountByCandidateId,
+            retrievedAt
+          ),
+          candidates
+        );
+        trace.push(
+          buildCrossContractTrace(
+            `Cluster refiner ${refinementResponse.provider_id ?? refiner.providerId} merged pre-clusters into ${clusters.length} validated event cluster(s).`,
+            request.recency_window_hours,
+            request.max_results,
+            'cluster',
+            true
+          )
+        );
+      } catch (error) {
+        const issue = error instanceof Error ? error.message : 'cluster refinement validation failed';
+        issues.push(`Cluster refinement failed validation; falling back to deterministic pre-clusters. ${issue}`);
+        clusters = sortEventClusters(
+          preClusters.map((preCluster) => convertPreClusterToEventCluster(preCluster, 'llm_refinement_failed_fallback')),
+          candidates
+        );
+        trace.push(
+          buildCrossContractTrace(
+            `Cluster refiner ${refinementResponse.provider_id ?? refiner.providerId} returned invalid output: ${issue}`,
+            request.recency_window_hours,
+            request.max_results,
+            'cluster',
+            true
+          )
+        );
+      }
+    } else {
+      const issue = refinementResponse.issue?.trim();
+      if (issue) {
+        issues.push(`Cluster refinement unavailable; falling back to deterministic pre-clusters. ${issue}`);
+      }
+      clusters = sortEventClusters(
+        preClusters.map((preCluster) =>
+          convertPreClusterToEventCluster(preCluster, issue ? 'llm_refinement_failed_fallback' : 'deterministic_only')
+        ),
+        candidates
+      );
+      trace.push(
+        buildCrossContractTrace(
+          `Cluster refiner ${refinementResponse.provider_id ?? refiner.providerId} was unavailable${issue ? `: ${issue}` : ''}`,
+          request.recency_window_hours,
+          request.max_results,
+          'cluster',
+          Boolean(issue)
+        )
+      );
+    }
+  }
+
+  return CrossContractScanSummarySchema.parse({
+    status: 'ready',
+    provider_id: provider.providerId,
+    retrieved_at: retrievedAt,
+    recency_window_hours: request.recency_window_hours,
+    candidates,
+    clusters,
+    issues,
+    scan_mode: 'morning_coverage',
     trace
   });
 };

@@ -164,6 +164,22 @@ button.secondary {
   gap: 10px;
 }
 
+.mode-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.mode-button {
+  background: transparent;
+  color: var(--deep);
+}
+
+.mode-button.active {
+  background: var(--deep);
+  color: #f7f3ea;
+}
+
 .pill-row,
 .tag-list {
   display: flex;
@@ -223,6 +239,29 @@ button.secondary {
 
 .candidate-card:first-of-type {
   border-top: none;
+}
+
+.cluster-list {
+  display: grid;
+  gap: 14px;
+}
+
+.cluster-card {
+  display: grid;
+  gap: 10px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 252, 247, 0.74);
+}
+
+.cluster-card h3,
+.cluster-card p {
+  margin: 0;
+}
+
+.cluster-members {
+  display: grid;
 }
 
 .candidate-header {

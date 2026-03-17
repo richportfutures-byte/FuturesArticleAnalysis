@@ -208,3 +208,38 @@ export const DiscoverySummarySchema = z.object({
     })
   )
 });
+
+export const EventClusterSchema = z.object({
+  cluster_id: z.string(),
+  label: z.string(),
+  description: z.string(),
+  member_candidate_ids: z.array(z.string()).min(1),
+  candidate_count: z.number().int().nonnegative(),
+  suppressed_duplicate_count: z.number().int().nonnegative(),
+  freshness_summary: z.string(),
+  source_quality_summary: z.string(),
+  primary_contracts: z.array(z.nativeEnum(ContractId)),
+  secondary_contracts: z.array(z.nativeEnum(ContractId)),
+  refinement_status: z.enum(['deterministic_only', 'llm_refined', 'llm_refinement_failed_fallback']),
+  provenance_notes: z.array(z.string())
+});
+
+export const CrossContractScanSummarySchema = z.object({
+  status: z.enum(['ready', 'empty', 'unconfigured', 'error']),
+  provider_id: z.string(),
+  retrieved_at: z.string(),
+  recency_window_hours: z.number().int().positive(),
+  candidates: z.array(DiscoveryCandidateSchema),
+  clusters: z.array(EventClusterSchema),
+  issues: z.array(z.string()),
+  scan_mode: z.literal('morning_coverage'),
+  trace: z.array(
+    z.object({
+      stage: z.enum(['pipeline', 'discover', 'intake', 'screen', 'cluster', 'analyze', 'translate', 'deploy']),
+      rule_id: z.string(),
+      source_files: z.array(z.string()),
+      detail: z.string(),
+      heuristic: z.boolean().optional()
+    })
+  )
+});
