@@ -67,11 +67,16 @@ This app does not:
 
 High-level config:
 - client mode selection uses `VITE_REASONER_MODE`
+- client discovery mode selection uses `VITE_SEARCH_MODE`
 - deployed live-provider requests use the Netlify function at `/.netlify/functions/reasoner` by default
+- deployed live discovery requests use the Netlify function at `/.netlify/functions/discover` by default
 - server-side provider configuration uses `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
+- server-side discovery configuration uses `TAVILY_API_KEY` and optional `TAVILY_BASE_URL`
 
 Important:
 - live mode on Netlify is designed to keep the API key server-side
+- `VITE_SEARCH_MODE` supports `live` (default) and `simulated`
+- `TAVILY_API_KEY` must remain server-side only and must never be exposed as `VITE_TAVILY_API_KEY`
 - simulated mode must be chosen explicitly
 - if live mode is selected without a valid provider configuration, the app fails closed rather than silently falling back
 

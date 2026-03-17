@@ -1,5 +1,3 @@
-const readEnv = (name) => process.env[name] ?? process.env[`VITE_${name}`];
-
 const json = (statusCode, payload) => ({
   statusCode,
   headers: {
@@ -18,8 +16,8 @@ const normalizeRecencyWindowHours = (requestedHours) =>
 const normalizeMaxResults = (requestedResults) => Math.min(MAX_RESULTS, Math.max(4, Math.round(Number(requestedResults) || 12)));
 
 const getProviderConfig = () => {
-  const apiKey = readEnv('TAVILY_API_KEY');
-  const baseUrl = readEnv('TAVILY_BASE_URL') ?? 'https://api.tavily.com';
+  const apiKey = process.env.TAVILY_API_KEY;
+  const baseUrl = process.env.TAVILY_BASE_URL ?? 'https://api.tavily.com';
   return apiKey ? { apiKey, baseUrl } : null;
 };
 
