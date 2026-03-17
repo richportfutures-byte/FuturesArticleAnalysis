@@ -1,15 +1,20 @@
-import { ContractId, HorizonBucket, NoveltyAssessment, PricingAssessment } from '../enums';
-import {
-  ContractOverride,
-  choosePolarityVerdict,
-  choosePricingFromNovelty,
-  rankDrivers,
-  sharedBlocks
-} from './types';
+import { ContractId, HorizonBucket, PricingAssessment } from '../enums';
+import { ContractOverride, rankDrivers, sharedBlocks } from './types';
 
 const sourceFiles = [
-  'CL Contract Prompt Library / cl_futures_article_workflow_package.docx',
-  'master_deployment_guide_by_contract.docx'
+  'docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx',
+  'docs/source_of_truth/contract_prompt_library/CL/01_article_selection_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/CL/02_narrative_clustering_and_screening.md',
+  'docs/source_of_truth/contract_prompt_library/CL/03_deep_analysis_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/CL/04_contract_translation_layer.md',
+  'docs/source_of_truth/contract_prompt_library/CL/05_deployment_and_trade_use_doctrine.md',
+  'docs/source_of_truth/contract_prompt_library/CL/06_confirmation_and_invalidation_playbook.md',
+  'docs/source_of_truth/contract_prompt_library/CL/07_pre_trade_sop.md',
+  'docs/source_of_truth/contract_prompt_library/CL/08_post_article_reaction_sop.md',
+  'docs/source_of_truth/contract_prompt_library/CL/09_single_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/CL/10_multi_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/CL/11_quick_intraday_filter_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/CL/12_domain_appendix.md'
 ];
 
 const driverOrder = [
@@ -170,18 +175,9 @@ export const clOverride: ContractOverride = {
     'geopolitical premium narrative',
     'post-hoc explanation or low-information commentary'
   ],
-  selectVerdict: (analysis, matchedChannels) => choosePolarityVerdict(analysis, clOverride.channelRules, matchedChannels),
-  choosePricing: (analysis) =>
-    choosePricingFromNovelty(analysis, {
-      [NoveltyAssessment.GENUINELY_NEW]: PricingAssessment.UNDERPRICED,
-      [NoveltyAssessment.PARTLY_NEW]: PricingAssessment.MIXED,
-      [NoveltyAssessment.RECYCLED_BACKGROUND]: PricingAssessment.ALREADY_PRICED,
-      [NoveltyAssessment.POST_HOC_ATTACHMENT]: PricingAssessment.IMPOSSIBLE_TO_ASSESS,
-      [NoveltyAssessment.UNCLEAR]: PricingAssessment.IMPOSSIBLE_TO_ASSESS
-    }),
   chooseExpressionVehicle: (_cluster, _sourceType, matchedChannels) =>
     matchedChannels.includes('product pull-through and crack-spread behavior')
       ? 'CL futures or products-linked expression depending on driver confirmation'
       : 'CL outright or calendar structure depending on driver',
-  driverHierarchy: (_analysis, matchedChannels) => rankDrivers(driverOrder, matchedChannels)
+  formatDriverDisplayOrder: (matchedChannels) => rankDrivers(driverOrder, matchedChannels)
 };

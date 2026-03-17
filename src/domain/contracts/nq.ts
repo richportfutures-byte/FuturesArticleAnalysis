@@ -1,28 +1,21 @@
-import { ContractId, HorizonBucket, NoveltyAssessment, PricingAssessment } from '../enums';
-import {
-  ContractOverride,
-  choosePolarityVerdict,
-  choosePricingFromNovelty,
-  rankDrivers,
-  sharedBlocks
-} from './types';
+import { ContractId, HorizonBucket, PricingAssessment } from '../enums';
+import { ContractOverride, rankDrivers, sharedBlocks } from './types';
 
 const sourceFiles = [
-  'master_deployment_guide_by_contract.docx',
-  'NQ Contract Prompt Library / readme.md',
-  'NQ / 01_article_selection_protocol.md',
-  'NQ / 02_narrative_clustering_and_screening.md',
-  'NQ / 03_deep_analysis_protocol.md',
-  'NQ / 04_contract_translation_layer.md',
-  'NQ / 05_deployment_and_trade_use_doctrine.md',
-  'NQ / 06_confirmation_and_invalidation_playbook.md',
-  'NQ / 07_pre_trade_sop.md',
-  'NQ / 08_post_article_reaction_sop.md',
-  'NQ / 09_single_article_one_shot_prompt.txt',
-  'NQ / 10_multi_article_one_shot_prompt.txt',
-  'NQ / 11_quick_intraday_filter_prompt.txt',
-  'NQ / 12_domain_appendix.md',
-  'NQ / 13_active_hours_reference.md'
+  'docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx',
+  'docs/source_of_truth/contract_prompt_library/NQ/README.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/01_article_selection_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/02_narrative_clustering_and_screening.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/03_deep_analysis_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/04_contract_translation_layer.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/05_deployment_and_trade_use_doctrine.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/06_confirmation_and_invalidation_playbook.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/07_pre_trade_sop.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/08_post_article_reaction_sop.md',
+  'docs/source_of_truth/contract_prompt_library/NQ/09_single_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/NQ/10_multi_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/NQ/11_quick_intraday_filter_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/NQ/12_domain_appendix.md'
 ];
 
 const driverOrder = [
@@ -160,21 +153,12 @@ export const nqOverride: ContractOverride = {
     activeHours: {
       rule_id: 'NQ_ACTIVE_HOURS_CONTEXT',
       source_files: sourceFiles,
-      detail: 'Carry the NQ structural and event windows directly from the uploaded active-hours guide.'
+      detail: 'Carry the NQ structural and event windows directly from the current NQ source-of-truth files.'
     }
   },
-  selectVerdict: (analysis, matchedChannels) => choosePolarityVerdict(analysis, nqOverride.channelRules, matchedChannels),
-  choosePricing: (analysis) =>
-    choosePricingFromNovelty(analysis, {
-      [NoveltyAssessment.GENUINELY_NEW]: PricingAssessment.UNDERPRICED,
-      [NoveltyAssessment.PARTLY_NEW]: PricingAssessment.MIXED,
-      [NoveltyAssessment.RECYCLED_BACKGROUND]: PricingAssessment.STALE,
-      [NoveltyAssessment.POST_HOC_ATTACHMENT]: PricingAssessment.IMPOSSIBLE_TO_ASSESS,
-      [NoveltyAssessment.UNCLEAR]: PricingAssessment.IMPOSSIBLE_TO_ASSESS
-    }),
   chooseExpressionVehicle: (_cluster, _sourceType, matchedChannels) =>
     matchedChannels.includes('megacap tech leadership') || matchedChannels.includes('semiconductors and AI capex')
       ? 'NQ futures / QQQ leadership proxy'
       : 'NQ futures',
-  driverHierarchy: (_analysis, matchedChannels) => rankDrivers(driverOrder, matchedChannels)
+  formatDriverDisplayOrder: (matchedChannels) => rankDrivers(driverOrder, matchedChannels)
 };

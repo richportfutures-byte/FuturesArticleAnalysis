@@ -1,0 +1,21 @@
+Use this as a fast filter for Euro FX Futures (6E). Read the article or headline cluster and answer only the following:
+
+        1. Does this matter for Euro FX Futures (6E)? Yes / No / Maybe
+        2. What is the dominant transmission channel?
+        3. Is the information new, stale, or unclear?
+        4. What is the directional implication for the contract? Bullish / Bearish / Mixed / No edge
+        5. What must confirm in the market before this deserves trading attention?
+        - front-end spread behavior
+- DXY context
+- Bund versus Treasury rate moves
+- European equities and banks
+- US-session follow-through after Europe trades
+        6. Is this best treated as:
+        - setup confirmation
+        - context only
+        - fade candidate
+        - continuation candidate
+        - ignore
+        7. One paragraph titled HOW THIS SHOULD INFORM TRADING, NOT DICTATE TRADING.
+
+        Keep it brief, specific, and contract-native. Do not summarize the article at length.

@@ -2,7 +2,7 @@ import { ProvenanceRecord, RuleTrace } from './entities';
 
 export const baseProvenance = (): ProvenanceRecord => ({
   source_files: [
-    'master_deployment_guide_by_contract.docx',
+    'docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx',
     '00_SOURCE_INVENTORY.md',
     '01_PRODUCT_SPEC.md',
     '02_STATE_MACHINE_SPEC.md',
@@ -14,7 +14,7 @@ export const baseProvenance = (): ProvenanceRecord => ({
   ],
   rule_ids: [],
   contract_override_ids: [],
-  notes: ['All five contracts treated as implementation-grade in this pack; CL is dedicated package, others block-level.'],
+  notes: ['All five contracts are treated as implementation-grade sources under docs/source_of_truth; CL uses the current block-level folder.'],
   rule_trace: []
 });
 

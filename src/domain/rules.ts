@@ -5,13 +5,14 @@ export const validateInput = (contractId: string | undefined, articles: Article[
   const errors: string[] = [];
   if (!contractId) errors.push('contract_id missing');
   if (articles.length === 0) errors.push('source payload empty');
+  if (articles.some((article) => !article.headline.trim())) errors.push('headline missing on one or more articles');
   return errors;
 };
 
 export const classifySource = (article: Article, hasChannel: boolean): SourceSurvival => {
   if (!hasChannel) return SourceSurvival.IRRELEVANT;
   if (article.source_type === SourceType.COMMENTARY) return SourceSurvival.CONTEXT_ONLY;
-  if (article.body_excerpt.length < 20) return SourceSurvival.NOISE;
+  if (article.body_excerpt.trim().length < 20 && article.source_type !== SourceType.OFFICIAL_STATEMENT) return SourceSurvival.NOISE;
   return SourceSurvival.SELECTED;
 };
 

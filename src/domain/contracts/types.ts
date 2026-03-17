@@ -1,5 +1,5 @@
 import { Contract, DeepAnalysis, HorizonSplit, NarrativeCluster, RuleTrace, TranslationResult } from '../entities';
-import { NoveltyAssessment, PricingAssessment, SourceType, Verdict } from '../enums';
+import { PricingAssessment, SourceType } from '../enums';
 
 type DominantSide = 'euro_driver' | 'dollar_driver' | 'mixed' | 'unclear';
 
@@ -24,6 +24,7 @@ export type ContractOverride = {
   source_files: string[];
   channels: string[];
   pricingModes: PricingAssessment[];
+  // Pre-reasoning contract scope hints only. These are for intake/screening, not for post-reasoning meaning inference.
   channelRules: ContractChannelRule[];
   invalidation_markers: string[];
   activeHours: {
@@ -42,10 +43,9 @@ export type ContractOverride = {
     activeHours: ContractRuleRef;
   };
   classifySide?: (analysis: DeepAnalysis, matchedChannels: string[]) => DominantSide;
-  selectVerdict: (analysis: DeepAnalysis, matchedChannels: string[]) => Verdict;
-  choosePricing: (analysis: DeepAnalysis, matchedChannels: string[], verdict: Verdict) => PricingAssessment;
   chooseExpressionVehicle: (cluster: NarrativeCluster | null, sourceType: SourceType, matchedChannels: string[]) => string;
-  driverHierarchy: (analysis: DeepAnalysis, matchedChannels: string[]) => string[];
+  // Presentation-only ordering for already validated drivers. This must not infer new meaning.
+  formatDriverDisplayOrder: (matchedChannels: string[]) => string[];
   requiredBuckets?: string[];
 };
 
@@ -69,46 +69,6 @@ export const includesAny = (input: string, terms: string[]): boolean =>
 
 export const matchChannels = (input: string, channelRules: ContractChannelRule[]): string[] =>
   Array.from(new Set(channelRules.filter((rule) => includesAny(input, rule.keywords)).map((rule) => rule.channel)));
-
-const matchedRules = (input: string, channelRules: ContractChannelRule[]): ContractChannelRule[] =>
-  channelRules.filter((rule) => includesAny(input, rule.keywords));
-
-export const choosePolarityVerdict = (
-  analysis: DeepAnalysis,
-  channelRules: ContractChannelRule[],
-  matchedChannels: string[]
-): Verdict => {
-  if (analysis.novelty_assessment === 'post_hoc_attachment' || analysis.confirmed_facts.length === 0 || matchedChannels.length === 0) {
-    return Verdict.NO_EDGE;
-  }
-
-  const claim = analysis.core_claim.toLowerCase();
-  let bullishMatches = 0;
-  let bearishMatches = 0;
-
-  matchedRules(claim, channelRules)
-    .filter((rule) => matchedChannels.includes(rule.channel))
-    .forEach((rule) => {
-      if (rule.bullish && includesAny(claim, rule.bullish)) bullishMatches += 1;
-      if (rule.bearish && includesAny(claim, rule.bearish)) bearishMatches += 1;
-    });
-
-  if (bullishMatches > 0 && bearishMatches === 0) return Verdict.BULLISH;
-  if (bearishMatches > 0 && bullishMatches === 0) return Verdict.BEARISH;
-  if (bullishMatches === 0 && bearishMatches === 0) return Verdict.MIXED;
-  return Verdict.MIXED;
-};
-
-export const choosePricingFromNovelty = (
-  analysis: DeepAnalysis,
-  pricingMap: Partial<Record<NoveltyAssessment, PricingAssessment>>
-): PricingAssessment => {
-  const mapped = pricingMap[analysis.novelty_assessment];
-  if (mapped) {
-    return mapped;
-  }
-  return PricingAssessment.IMPOSSIBLE_TO_ASSESS;
-};
 
 export const defaultTradeNote: TranslationResult['trade_use_note'] =
   'Use this output to shape bias and confirmation plan only; do not derive exact entry, stop, or size from this workflow.';

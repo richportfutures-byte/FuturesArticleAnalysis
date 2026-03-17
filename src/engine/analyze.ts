@@ -1,43 +1,117 @@
 import { ContractOverride, buildTrace } from '../domain/contracts/types';
-import { Article, DeepAnalysis, NarrativeCluster } from '../domain/entities';
-import { NoveltyAssessment, SourceType } from '../domain/enums';
+import { buildContractDoctrineBundle } from '../domain/doctrine';
+import { DeepAnalysis, NarrativeCluster, NormalizedArticle, RuleTrace } from '../domain/entities';
+import { ReasonerMode } from '../domain/enums';
+import { DeepAnalysisSchema } from '../schemas/output';
+import {
+  LiveReasoningProvider,
+  MarketIntelligenceReasoner,
+  ReasonerSelectionMode,
+  createDefaultReasoner
+} from './reasoner';
+import { ScreenedArticle } from './screen';
 
-export const runAnalyze = (articles: Article[], override: ContractOverride, cluster: NarrativeCluster) => {
-  const strongestArticle =
-    articles.find((article) => article.source_type === SourceType.OFFICIAL_STATEMENT) ??
-    articles.find((article) => article.source_type === SourceType.PRIMARY_REPORTING) ??
-    articles[0];
+type AnalyzeOptions = {
+  reasonerSelection?: ReasonerSelectionMode;
+  reasoner?: MarketIntelligenceReasoner;
+  liveProvider?: LiveReasoningProvider | null;
+};
 
-  const text = `${strongestArticle?.headline ?? ''} ${strongestArticle?.body_excerpt ?? ''}`.trim();
-  const confirmed = articles
-    .filter((article) => article.source_type === SourceType.PRIMARY_REPORTING || article.source_type === SourceType.OFFICIAL_STATEMENT)
-    .map((article) => article.headline);
+export type AnalyzeProviderStatus = 'simulated' | 'live_provider' | 'failed_provider_path';
 
-  const novelty =
-    confirmed.length > 0
-      ? NoveltyAssessment.GENUINELY_NEW
-      : articles.some((article) => article.source_type === SourceType.SYNTHESIS || article.source_type === SourceType.COMMENTARY)
-        ? NoveltyAssessment.RECYCLED_BACKGROUND
-        : NoveltyAssessment.UNCLEAR;
+export type AnalyzeResult = {
+  analysis: DeepAnalysis | null;
+  issue?: string;
+  trace: RuleTrace[];
+  providerStatus: AnalyzeProviderStatus;
+  providerId: string;
+};
 
-  const analysis: DeepAnalysis = {
-    core_claim: text || 'No durable claim extracted',
-    confirmed_facts: confirmed,
-    plausible_inference: cluster.common_facts,
-    speculation: articles.filter((article) => article.source_type === SourceType.COMMENTARY).map((article) => article.headline),
-    opinion: articles.filter((article) => article.source_type === SourceType.SYNTHESIS).map((article) => article.headline),
-    novelty_assessment: novelty,
-    competing_interpretation: 'Move may be positioning or microstructure rather than article catalyst.'
-  };
-
-  const trace = [
+const buildFailureResult = (
+  override: ContractOverride,
+  providerId: string,
+  issue: string
+): AnalyzeResult => ({
+  analysis: null,
+  issue,
+  providerStatus: 'failed_provider_path',
+  providerId,
+  trace: [
     buildTrace(
       'analyze',
       override.ruleRefs.analysis,
-      `Deep analysis anchored to ${strongestArticle?.article_id ?? 'no_article'} with ${confirmed.length} confirmed source(s).`,
-      true
+      `Reasoning skipped because provider ${providerId} failed closed. ${issue}`,
+      false
     )
-  ];
+  ]
+});
 
-  return { analysis, trace };
+export const runAnalyze = async (
+  normalizedArticles: NormalizedArticle[],
+  screenedArticles: ScreenedArticle[],
+  override: ContractOverride,
+  cluster: NarrativeCluster,
+  options: AnalyzeOptions = {}
+): Promise<AnalyzeResult> => {
+  const doctrineBundle = buildContractDoctrineBundle(override.meta.id, override.source_files);
+  const reasoner = options.reasoner ?? createDefaultReasoner(options.reasonerSelection, options.liveProvider);
+  const invocation = await reasoner.generate({
+    override,
+    doctrineBundle,
+    normalizedArticles,
+    screenedArticles,
+    cluster
+  });
+
+  if (!reasoner.configured) {
+    return buildFailureResult(
+      override,
+      reasoner.providerId,
+      invocation.issue ?? 'Reasoner provider is unavailable.'
+    );
+  }
+
+  if (!invocation.analysis) {
+    return buildFailureResult(
+      override,
+      reasoner.providerId,
+      invocation.issue ?? `Provider ${reasoner.providerId} returned no reasoning payload.`
+    );
+  }
+
+  const parsed = DeepAnalysisSchema.safeParse(invocation.analysis);
+  if (!parsed.success) {
+    const firstIssue = parsed.error.issues[0];
+    const issueDetail = firstIssue
+      ? `${firstIssue.path.join('.') || 'analysis'} ${firstIssue.message}`
+      : 'schema validation failed.';
+
+    return buildFailureResult(
+      override,
+      reasoner.providerId,
+      `Provider ${reasoner.providerId} returned an invalid reasoning payload: ${issueDetail}`
+    );
+  }
+
+  const analysis: DeepAnalysis = {
+    ...parsed.data,
+    reasoner_mode: reasoner.mode
+  };
+
+  const providerStatus: AnalyzeProviderStatus =
+    reasoner.mode === ReasonerMode.SIMULATED_LLM ? 'simulated' : 'live_provider';
+
+  return {
+    analysis,
+    providerStatus,
+    providerId: reasoner.providerId,
+    trace: [
+      buildTrace(
+        'analyze',
+        override.ruleRefs.analysis,
+        `Structured reasoning generated by ${reasoner.providerId} in ${analysis.reasoner_mode} mode with ${analysis.confirmed_facts.length} confirmed fact(s) and ${analysis.causal_chain.length} causal step(s).`,
+        providerStatus === 'simulated'
+      )
+    ]
+  };
 };

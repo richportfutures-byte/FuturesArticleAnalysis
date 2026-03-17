@@ -15,6 +15,8 @@ All five modules share the same block sequence:
 11. Quick intraday filter
 12. Domain appendix
 
+In the current source-of-truth tree, these blocks live under `docs/source_of_truth/contract_prompt_library/<CONTRACT>/`.
+
 All modules also share the operator rule that these workflows shape bias, relevance, and scenario framing rather than act as autonomous trade directives.
 
 ---

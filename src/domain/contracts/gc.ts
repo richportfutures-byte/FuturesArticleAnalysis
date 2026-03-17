@@ -1,28 +1,21 @@
-import { ContractId, HorizonBucket, NoveltyAssessment, PricingAssessment } from '../enums';
-import {
-  ContractOverride,
-  choosePolarityVerdict,
-  choosePricingFromNovelty,
-  rankDrivers,
-  sharedBlocks
-} from './types';
+import { ContractId, HorizonBucket, PricingAssessment } from '../enums';
+import { ContractOverride, rankDrivers, sharedBlocks } from './types';
 
 const sourceFiles = [
-  'master_deployment_guide_by_contract.docx',
-  'GC Contract Prompt Library / readme.md',
-  'GC / 01_article_selection_protocol.md',
-  'GC / 02_narrative_clustering_and_screening.md',
-  'GC / 03_deep_analysis_protocol.md',
-  'GC / 04_contract_translation_layer.md',
-  'GC / 05_deployment_and_trade_use_doctrine.md',
-  'GC / 06_confirmation_and_invalidation_playbook.md',
-  'GC / 07_pre_trade_sop.md',
-  'GC / 08_post_article_reaction_sop.md',
-  'GC / 09_single_article_one_shot_prompt.txt',
-  'GC / 10_multi_article_one_shot_prompt.txt',
-  'GC / 11_quick_intraday_filter_prompt.txt',
-  'GC / 12_domain_appendix.md',
-  'GC / 13_active_hours_reference.md'
+  'docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx',
+  'docs/source_of_truth/contract_prompt_library/GC/README.md',
+  'docs/source_of_truth/contract_prompt_library/GC/01_article_selection_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/GC/02_narrative_clustering_and_screening.md',
+  'docs/source_of_truth/contract_prompt_library/GC/03_deep_analysis_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/GC/04_contract_translation_layer.md',
+  'docs/source_of_truth/contract_prompt_library/GC/05_deployment_and_trade_use_doctrine.md',
+  'docs/source_of_truth/contract_prompt_library/GC/06_confirmation_and_invalidation_playbook.md',
+  'docs/source_of_truth/contract_prompt_library/GC/07_pre_trade_sop.md',
+  'docs/source_of_truth/contract_prompt_library/GC/08_post_article_reaction_sop.md',
+  'docs/source_of_truth/contract_prompt_library/GC/09_single_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/GC/10_multi_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/GC/11_quick_intraday_filter_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/GC/12_domain_appendix.md'
 ];
 
 const driverOrder = [
@@ -167,21 +160,12 @@ export const gcOverride: ContractOverride = {
     activeHours: {
       rule_id: 'GC_ACTIVE_HOURS_CONTEXT',
       source_files: sourceFiles,
-      detail: 'Carry the GC structural and event windows directly from the uploaded active-hours guide.'
+      detail: 'Carry the GC structural and event windows directly from the current GC source-of-truth files.'
     }
   },
-  selectVerdict: (analysis, matchedChannels) => choosePolarityVerdict(analysis, gcOverride.channelRules, matchedChannels),
-  choosePricing: (analysis) =>
-    choosePricingFromNovelty(analysis, {
-      [NoveltyAssessment.GENUINELY_NEW]: PricingAssessment.UNDERPRICED,
-      [NoveltyAssessment.PARTLY_NEW]: PricingAssessment.MIXED,
-      [NoveltyAssessment.RECYCLED_BACKGROUND]: PricingAssessment.STALE,
-      [NoveltyAssessment.POST_HOC_ATTACHMENT]: PricingAssessment.IMPOSSIBLE_TO_ASSESS,
-      [NoveltyAssessment.UNCLEAR]: PricingAssessment.IMPOSSIBLE_TO_ASSESS
-    }),
   chooseExpressionVehicle: (_cluster, _sourceType, matchedChannels) =>
     matchedChannels.includes('US dollar') || matchedChannels.includes('real yields')
       ? 'GC futures / XAUUSD with cross-asset confirmation'
       : 'GC futures',
-  driverHierarchy: (_analysis, matchedChannels) => rankDrivers(driverOrder, matchedChannels)
+  formatDriverDisplayOrder: (matchedChannels) => rankDrivers(driverOrder, matchedChannels)
 };

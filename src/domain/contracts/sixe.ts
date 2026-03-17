@@ -1,28 +1,21 @@
-import { ContractId, HorizonBucket, NoveltyAssessment, PricingAssessment, Verdict } from '../enums';
-import {
-  ContractOverride,
-  choosePolarityVerdict,
-  choosePricingFromNovelty,
-  rankDrivers,
-  sharedBlocks
-} from './types';
+import { ContractId, HorizonBucket, PricingAssessment } from '../enums';
+import { ContractOverride, rankDrivers, sharedBlocks } from './types';
 
 const sourceFiles = [
-  'master_deployment_guide_by_contract.docx',
-  '6E Contract Prompt Library / readme.md',
-  '6E / 01_article_selection_protocol.md',
-  '6E / 02_narrative_clustering_and_screening.md',
-  '6E / 03_deep_analysis_protocol.md',
-  '6E / 04_contract_translation_layer.md',
-  '6E / 05_deployment_and_trade_use_doctrine.md',
-  '6E / 06_confirmation_and_invalidation_playbook.md',
-  '6E / 07_pre_trade_sop.md',
-  '6E / 08_post_article_reaction_sop.md',
-  '6E / 09_single_article_one_shot_prompt.txt',
-  '6E / 10_multi_article_one_shot_prompt.txt',
-  '6E / 11_quick_intraday_filter_prompt.txt',
-  '6E / 12_domain_appendix.md',
-  '6E / 13_active_hours_reference.md'
+  'docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx',
+  'docs/source_of_truth/contract_prompt_library/6E/README.md',
+  'docs/source_of_truth/contract_prompt_library/6E/01_article_selection_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/6E/02_narrative_clustering_and_screening.md',
+  'docs/source_of_truth/contract_prompt_library/6E/03_deep_analysis_protocol.md',
+  'docs/source_of_truth/contract_prompt_library/6E/04_contract_translation_layer.md',
+  'docs/source_of_truth/contract_prompt_library/6E/05_deployment_and_trade_use_doctrine.md',
+  'docs/source_of_truth/contract_prompt_library/6E/06_confirmation_and_invalidation_playbook.md',
+  'docs/source_of_truth/contract_prompt_library/6E/07_pre_trade_sop.md',
+  'docs/source_of_truth/contract_prompt_library/6E/08_post_article_reaction_sop.md',
+  'docs/source_of_truth/contract_prompt_library/6E/09_single_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/6E/10_multi_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/6E/11_quick_intraday_filter_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/6E/12_domain_appendix.md'
 ];
 
 const driverOrder = [
@@ -171,7 +164,7 @@ export const sixeOverride: ContractOverride = {
     activeHours: {
       rule_id: 'SIXE_ACTIVE_HOURS_CONTEXT',
       source_files: sourceFiles,
-      detail: 'Carry the 6E structural and event windows directly from the uploaded active-hours guide.'
+      detail: 'Carry the 6E structural and event windows directly from the current 6E source-of-truth files.'
     }
   },
   classifySide: (_analysis, matchedChannels) => {
@@ -186,20 +179,6 @@ export const sixeOverride: ContractOverride = {
     if (sideMatches.includes('dollar_driver')) return 'dollar_driver';
     return 'unclear';
   },
-  selectVerdict: (analysis, matchedChannels) => {
-    const verdict = choosePolarityVerdict(analysis, sixeOverride.channelRules, matchedChannels);
-    return verdict === Verdict.MIXED && matchedChannels.includes('broad dollar regime versus euro-specific repricing')
-      ? Verdict.BEARISH
-      : verdict;
-  },
-  choosePricing: (analysis) =>
-    choosePricingFromNovelty(analysis, {
-      [NoveltyAssessment.GENUINELY_NEW]: PricingAssessment.UNDERPRICED,
-      [NoveltyAssessment.PARTLY_NEW]: PricingAssessment.CONSENSUS,
-      [NoveltyAssessment.RECYCLED_BACKGROUND]: PricingAssessment.STALE,
-      [NoveltyAssessment.POST_HOC_ATTACHMENT]: PricingAssessment.IMPOSSIBLE_TO_ASSESS,
-      [NoveltyAssessment.UNCLEAR]: PricingAssessment.MIXED
-    }),
   chooseExpressionVehicle: () => '6E futures with EUR/USD relative-rate context',
-  driverHierarchy: (_analysis, matchedChannels) => rankDrivers(driverOrder, matchedChannels)
+  formatDriverDisplayOrder: (matchedChannels) => rankDrivers(driverOrder, matchedChannels)
 };

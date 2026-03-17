@@ -19,35 +19,62 @@ const sourceRank = (sourceType: SourceType): number => {
 };
 
 export const runCluster = (override: ContractOverride, screenedArticles: ScreenedArticle[]) => {
-  const matchedChannels = Array.from(new Set(screenedArticles.flatMap((entry) => entry.matchedChannels)));
   const selected = screenedArticles.filter((entry) => entry.result === SourceSurvival.SELECTED || entry.result === SourceSurvival.CONTEXT_ONLY);
+  const matchedChannels = Array.from(new Set(selected.flatMap((entry) => entry.matchedChannels)));
+  const frequency = new Map<string, number>();
+  matchedChannels.forEach((channel) => frequency.set(channel, 0));
+  selected.forEach((entry) => entry.matchedChannels.forEach((channel) => frequency.set(channel, (frequency.get(channel) ?? 0) + 1)));
+  const dominantDrivers = Array.from(frequency.entries())
+    .sort((left, right) => right[1] - left[1])
+    .map(([driver]) => driver)
+    .slice(0, 3);
+
   const primaryCount = selected.filter(
     (entry) => entry.article.source_type === SourceType.PRIMARY_REPORTING || entry.article.source_type === SourceType.OFFICIAL_STATEMENT
   ).length;
   const commentaryCount = selected.filter((entry) => entry.article.source_type === SourceType.COMMENTARY).length;
 
   let mode = ClusterMode.NONE;
-  if (matchedChannels.length === 0) {
+  if (selected.length === 0 || matchedChannels.length === 0) {
     mode = ClusterMode.NONE;
   } else if (commentaryCount > 0 && primaryCount === 0) {
     mode = ClusterMode.POST_HOC;
   } else if (primaryCount > 1 && commentaryCount > 0) {
     mode = ClusterMode.MIXED;
+  } else if (selected.length > 1 && dominantDrivers.length === 1) {
+    mode = ClusterMode.CONSENSUS;
   } else if (selected.length > 1) {
     mode = ClusterMode.DISCOVERY;
   }
 
   const ranked = [...selected].sort((left, right) => sourceRank(right.article.source_type) - sourceRank(left.article.source_type));
   const cluster: NarrativeCluster = {
-    cluster_id: `cluster-${Date.now()}`,
+    cluster_id: `cluster-${override.meta.id.toLowerCase()}-${selected.map((entry) => entry.article.article_id).join('-') || 'none'}`,
     contract_id: override.meta.id,
     cluster_mode: mode,
-    common_facts: matchedChannels.map((channel) => `${channel} appears across the surviving source set.`),
+    theme: dominantDrivers.join(' / ') || 'no durable doctrine-backed theme',
+    article_ids: selected.map((entry) => entry.article.article_id),
+    dominant_narrative:
+      dominantDrivers.length > 0
+        ? `The surviving source set centers on ${dominantDrivers.join(', ')} as the dominant contract transmission map.`
+        : 'No durable doctrine-backed narrative survived screening.',
+    source_map: selected.map(
+      (entry) => `${entry.article.article_id} [${entry.article.source_type}] -> ${entry.matchedChannels.join(', ') || 'no matched driver'}`
+    ),
+    common_facts:
+      primaryCount > 0
+        ? selected
+            .filter((entry) => entry.article.source_type === SourceType.PRIMARY_REPORTING || entry.article.source_type === SourceType.OFFICIAL_STATEMENT)
+            .map((entry) => entry.article.headline)
+            .slice(0, 3)
+        : matchedChannels.map((channel) => `${channel} appears across the surviving source set.`),
     disputed_claims:
-      commentaryCount > 0 ? ['Lower-quality commentary diverges from the stronger source map on the same catalyst.'] : [],
+      commentaryCount > 0 || dominantDrivers.length > 1
+        ? ['Competing narratives or lower-quality framing remain in the surviving cluster and need doctrine validation.']
+        : [],
     strongest_source_article_id: ranked[0]?.article.article_id ?? null,
     weakest_source_article_id: ranked[ranked.length - 1]?.article.article_id ?? null,
-    newness_confidence: primaryCount > 0 ? 0.8 : matchedChannels.length > 0 ? 0.4 : 0.1,
+    newness_confidence: primaryCount > 1 ? 0.9 : primaryCount === 1 ? 0.7 : matchedChannels.length > 0 ? 0.45 : 0.1,
     tradability_class:
       matchedChannels.length === 0 ? 'noise' : selected.some((entry) => entry.result === SourceSurvival.SELECTED) ? 'tradable' : 'context_only'
   };
@@ -56,7 +83,7 @@ export const runCluster = (override: ContractOverride, screenedArticles: Screene
     buildTrace(
       'cluster',
       override.ruleRefs.clustering,
-      `Clustered ${selected.length} surviving article(s) as ${mode} across channels: ${matchedChannels.join(', ') || 'none'}.`,
+      `Clustered ${selected.length} surviving article(s) as ${mode} around theme: ${cluster.theme}.`,
       true
     )
   ];

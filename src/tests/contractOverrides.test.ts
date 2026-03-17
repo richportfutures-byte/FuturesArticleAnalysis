@@ -13,6 +13,9 @@ describe('contract overrides', () => {
       expect(override.ruleRefs.translation.rule_id).toBeTruthy();
       expect(override.ruleRefs.deployment.rule_id).toBeTruthy();
       expect(override.channelRules.length).toBeGreaterThan(0);
+      expect(typeof override.formatDriverDisplayOrder).toBe('function');
+      expect(override).not.toHaveProperty('selectVerdict');
+      expect(override).not.toHaveProperty('choosePricing');
     });
   });
 });

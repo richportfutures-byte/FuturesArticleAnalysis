@@ -1,18 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { contractOverrides } from '../domain/contracts';
 import { Article, DeepAnalysis } from '../domain/entities';
-import { ContractId, DeploymentUse, NoveltyAssessment, RunMode, SourceType } from '../domain/enums';
+import {
+  CausalCoherenceAssessment,
+  ContractId,
+  DeploymentUse,
+  NoveltyAssessment,
+  PricedInAssessment,
+  ReasonerMode,
+  RunMode,
+  SourceType,
+  Verdict
+} from '../domain/enums';
 import { runTranslate } from '../engine/translate';
 import { executePipeline } from '../engine/pipeline';
 import { seedFixtures } from '../fixtures/seedFixtures';
 
 const requiredRuleRefKeys = ['screening', 'clustering', 'analysis', 'translation', 'pricing', 'deployment', 'activeHours'] as const;
 const canonicalSourceByContract: Record<ContractId, string> = {
-  [ContractId.NQ]: 'NQ Contract Prompt Library / readme.md',
-  [ContractId.ZN]: 'ZN Contract Prompt Library / readme.md',
-  [ContractId.GC]: 'GC Contract Prompt Library / readme.md',
-  [ContractId.SIXE]: '6E Contract Prompt Library / readme.md',
-  [ContractId.CL]: 'CL Contract Prompt Library / cl_futures_article_workflow_package.docx'
+  [ContractId.NQ]: 'docs/source_of_truth/contract_prompt_library/NQ/README.md',
+  [ContractId.ZN]: 'docs/source_of_truth/contract_prompt_library/ZN/README.md',
+  [ContractId.GC]: 'docs/source_of_truth/contract_prompt_library/GC/README.md',
+  [ContractId.SIXE]: 'docs/source_of_truth/contract_prompt_library/6E/README.md',
+  [ContractId.CL]: 'docs/source_of_truth/contract_prompt_library/CL/01_article_selection_protocol.md'
 };
 
 const makeArticle = (article_id: string, headline: string, source_type: SourceType): Article => ({
@@ -92,8 +102,29 @@ const buildNoMappingAnalysis = (): DeepAnalysis => ({
   plausible_inference: [],
   speculation: [],
   opinion: [],
+  inferred_claims: [],
+  speculative_claims: [],
+  rhetorical_elements: [],
   novelty_assessment: NoveltyAssessment.GENUINELY_NEW,
-  competing_interpretation: 'The article may matter elsewhere, but not for this contract.'
+  causal_chain: ['No clean contract transmission survives doctrine review.'],
+  causal_coherence_assessment: CausalCoherenceAssessment.UNSUPPORTED,
+  first_order_effects: [],
+  second_order_effects: [],
+  competing_interpretation: 'The article may matter elsewhere, but not for this contract.',
+  strongest_alternative_interpretation: 'The article may matter elsewhere, but not for this contract.',
+  priced_in_assessment: PricedInAssessment.UNCLEAR,
+  confirmation_markers: [],
+  invalidation_markers: [],
+  candidate_contract_relevance: [],
+  source_grounding: [],
+  confidence_notes: ['No doctrine-backed driver survived.'],
+  explicit_unknowns: ['Contract transmission is unsupported.'],
+  reasoner_mode: ReasonerMode.SIMULATED_LLM,
+  prompt_context: {
+    system_rules: [],
+    doctrine_source_files: [],
+    doctrine_highlights: []
+  }
 });
 
 describe('anti-drift override doctrine', () => {
@@ -102,7 +133,7 @@ describe('anti-drift override doctrine', () => {
     const channelTable = Array.from(new Set(override.channelRules.map((rule) => rule.channel)));
     const ruleIds = requiredRuleRefKeys.map((key) => override.ruleRefs[key].rule_id);
 
-    expect(override.source_files).toContain('master_deployment_guide_by_contract.docx');
+    expect(override.source_files).toContain('docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx');
     expect(override.source_files).toContain(canonicalSourceByContract[contractId]);
     expect(override.channels.length).toBeGreaterThan(0);
     expect(channelTable.sort()).toEqual([...override.channels].sort());
@@ -124,33 +155,41 @@ describe('anti-drift override doctrine', () => {
 });
 
 describe('anti-drift provenance traces', () => {
-  it.each(Object.values(ContractId))('records source-backed provenance across stage traces for %s', (contractId) => {
+  it.each(Object.values(ContractId))('records source-backed provenance across stage traces for %s', async (contractId) => {
     const input = sourceBackedRuns[contractId];
     const override = contractOverrides[contractId];
-    const output = executePipeline({
-      run_id: `${contractId.toLowerCase()}-anti-drift`,
-      contract_id: contractId,
-      run_mode: input.run_mode,
-      articles: input.articles
-    });
+    const output = await executePipeline(
+      {
+        run_id: `${contractId.toLowerCase()}-anti-drift`,
+        contract_id: contractId,
+        run_mode: input.run_mode,
+        articles: input.articles
+      },
+      { reasonerSelection: 'simulated' }
+    );
 
     expect(output.translation).toBeTruthy();
+    expect(output.analysis?.reasoner_mode).toBe(ReasonerMode.SIMULATED_LLM);
+    expect(output.bias_brief?.bounded_use).toBeTruthy();
     expect(output.provenance.contract_override_ids).toContain(override.override_id);
     expect(output.provenance.source_files).toEqual(expect.arrayContaining(override.source_files));
     expect(output.provenance.rule_ids).toEqual(expect.arrayContaining(requiredRuleRefKeys.map((key) => override.ruleRefs[key].rule_id)));
     expect(output.provenance.rule_trace.map((entry) => entry.stage)).toEqual(
-      expect.arrayContaining(['pipeline', 'screen', 'cluster', 'analyze', 'translate', 'deploy'])
+      expect.arrayContaining(['pipeline', 'intake', 'screen', 'cluster', 'analyze', 'translate', 'deploy'])
     );
   });
 
-  it.each(seedFixtures as any[])('records provenance for fixture $fixture_id', (fixture) => {
+  it.each(seedFixtures as any[])('records provenance for fixture $fixture_id', async (fixture) => {
     const override = contractOverrides[fixture.contract_id as ContractId];
-    const output = executePipeline({
-      run_id: fixture.fixture_id,
-      contract_id: fixture.contract_id as ContractId,
-      run_mode: fixture.run_mode as RunMode,
-      articles: buildFixtureArticles(fixture)
-    });
+    const output = await executePipeline(
+      {
+        run_id: fixture.fixture_id,
+        contract_id: fixture.contract_id as ContractId,
+        run_mode: fixture.run_mode as RunMode,
+        articles: buildFixtureArticles(fixture)
+      },
+      { reasonerSelection: 'simulated' }
+    );
 
     expect(output.provenance.contract_override_ids).toContain(override.override_id);
     expect(output.provenance.source_files).toEqual(expect.arrayContaining(override.source_files));
@@ -162,22 +201,29 @@ describe('anti-drift translation fail-closed behavior', () => {
   it.each(Object.values(ContractId))('fails closed when %s has no source-backed mapping', (contractId) => {
     const override = contractOverrides[contractId];
     const translated = runTranslate(override, buildNoMappingAnalysis(), null, [SourceType.PRIMARY_REPORTING]);
+    const translation = translated.translation;
 
-    expect(translated.translation).toBeNull();
+    expect(translation).not.toBeNull();
+    expect(translation?.doctrine_fit).toBe('none');
+    expect(translation?.verdict).toBe(Verdict.NO_EDGE);
+    expect(translation?.matched_drivers).toEqual([]);
     expect(translated.trace.some((entry) => entry.rule_id === override.ruleRefs.translation.rule_id)).toBe(true);
-    expect(translated.trace.some((entry) => /failed closed/i.test(entry.detail))).toBe(true);
+    expect(translated.trace.some((entry) => /matched drivers: none/i.test(entry.detail))).toBe(true);
   });
 });
 
 describe('anti-drift deployment boundaries', () => {
-  it.each(Object.values(ContractId))('keeps %s deployment output bounded and non-autonomous', (contractId) => {
+  it.each(Object.values(ContractId))('keeps %s deployment output bounded and non-autonomous', async (contractId) => {
     const input = sourceBackedRuns[contractId];
-    const output = executePipeline({
-      run_id: `${contractId.toLowerCase()}-deployment-boundary`,
-      contract_id: contractId,
-      run_mode: input.run_mode,
-      articles: input.articles
-    });
+    const output = await executePipeline(
+      {
+        run_id: `${contractId.toLowerCase()}-deployment-boundary`,
+        contract_id: contractId,
+        run_mode: input.run_mode,
+        articles: input.articles
+      },
+      { reasonerSelection: 'simulated' }
+    );
     const translation = output.translation;
 
     expect(translation).toBeTruthy();
@@ -194,6 +240,9 @@ describe('anti-drift deployment boundaries', () => {
     expect(translation).not.toHaveProperty('exact_size');
     expect(translation).not.toHaveProperty('autonomous_execution_permission');
     expect(translation?.trade_use_note.toLowerCase()).not.toMatch(
+      /\bexact entry\b|\bexact stop\b|\bexact size\b|\bautonomous execution\b|\bexecute automatically\b|\bplace order\b/
+    );
+    expect(output.bias_brief?.prose.toLowerCase()).not.toMatch(
       /\bexact entry\b|\bexact stop\b|\bexact size\b|\bautonomous execution\b|\bexecute automatically\b|\bplace order\b/
     );
   });

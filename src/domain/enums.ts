@@ -26,12 +26,40 @@ export enum SourceSurvival {
   IRRELEVANT = 'irrelevant'
 }
 
+export enum DoctrineFit {
+  STRONG = 'strong',
+  PARTIAL = 'partial',
+  WEAK = 'weak',
+  NONE = 'none'
+}
+
 export enum NoveltyAssessment {
   GENUINELY_NEW = 'genuinely_new',
   PARTLY_NEW = 'partly_new',
   RECYCLED_BACKGROUND = 'recycled_background',
   POST_HOC_ATTACHMENT = 'post_hoc_attachment',
   UNCLEAR = 'unclear'
+}
+
+export enum CausalCoherenceAssessment {
+  COHERENT = 'coherent',
+  MIXED = 'mixed',
+  FRAGILE = 'fragile',
+  UNSUPPORTED = 'unsupported'
+}
+
+export enum PricedInAssessment {
+  UNDERAPPRECIATED = 'underappreciated',
+  PARTIALLY_PRICED = 'partially_priced',
+  PRICED_IN = 'priced_in',
+  STALE = 'stale',
+  UNCLEAR = 'unclear'
+}
+
+export enum ReasonerMode {
+  SIMULATED_LLM = 'simulated_llm',
+  LIVE_PROVIDER_LLM = 'live_provider_llm',
+  UNCONFIGURED_LIVE_LLM = 'unconfigured_live_llm'
 }
 
 export enum ClusterMode {

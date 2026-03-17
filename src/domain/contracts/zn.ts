@@ -1,22 +1,16 @@
-import { ContractId, HorizonBucket, NoveltyAssessment, PricingAssessment, Verdict } from '../enums';
-import {
-  ContractOverride,
-  choosePolarityVerdict,
-  choosePricingFromNovelty,
-  rankDrivers,
-  sharedBlocks
-} from './types';
+import { ContractId, HorizonBucket, PricingAssessment } from '../enums';
+import { ContractOverride, rankDrivers, sharedBlocks } from './types';
 
 const sourceFiles = [
-  'master_deployment_guide_by_contract.docx',
-  'ZN Contract Prompt Library / readme.md',
-  'ZN / 02_narrative_clustering_and_screening.md',
-  'ZN / 05_deployment_and_trade_use_doctrine.md',
-  'ZN / 07_pre_trade_sop.md',
-  'ZN / 08_post_article_reaction_sop.md',
-  'ZN / 09_single_article_one_shot_prompt.txt',
-  'ZN / 10_multi_article_one_shot_prompt.txt',
-  'ZN / 12_domain_appendix.md'
+  'docs/source_of_truth/master_guide/Master_Deployment_Guide_By_Contract_v2.docx',
+  'docs/source_of_truth/contract_prompt_library/ZN/README.md',
+  'docs/source_of_truth/contract_prompt_library/ZN/02_narrative_clustering_and_screening.md',
+  'docs/source_of_truth/contract_prompt_library/ZN/05_deployment_and_trade_use_doctrine.md',
+  'docs/source_of_truth/contract_prompt_library/ZN/07_pre_trade_sop.md',
+  'docs/source_of_truth/contract_prompt_library/ZN/08_post_article_reaction_sop.md',
+  'docs/source_of_truth/contract_prompt_library/ZN/09_single_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/ZN/10_multi_article_one_shot_prompt.txt',
+  'docs/source_of_truth/contract_prompt_library/ZN/12_domain_appendix.md'
 ];
 
 const driverOrder = [
@@ -165,21 +159,9 @@ export const znOverride: ContractOverride = {
       detail: 'Carry only deployment timing windows explicitly described in the ZN deployment doctrine.'
     }
   },
-  selectVerdict: (analysis, matchedChannels) => {
-    const verdict = choosePolarityVerdict(analysis, znOverride.channelRules, matchedChannels);
-    return verdict === Verdict.MIXED && matchedChannels.includes('risk-off demand') ? Verdict.BULLISH : verdict;
-  },
-  choosePricing: (analysis) =>
-    choosePricingFromNovelty(analysis, {
-      [NoveltyAssessment.GENUINELY_NEW]: PricingAssessment.UNDERPRICED,
-      [NoveltyAssessment.PARTLY_NEW]: PricingAssessment.ALREADY_PRICED,
-      [NoveltyAssessment.RECYCLED_BACKGROUND]: PricingAssessment.STALE,
-      [NoveltyAssessment.POST_HOC_ATTACHMENT]: PricingAssessment.IMPOSSIBLE_TO_ASSESS,
-      [NoveltyAssessment.UNCLEAR]: PricingAssessment.MIXED
-    }),
   chooseExpressionVehicle: (_cluster, _sourceType, matchedChannels) =>
     matchedChannels.includes('curve context') || matchedChannels.includes('issuance')
       ? 'ZN outright or curve expression where applicable'
       : 'ZN outright',
-  driverHierarchy: (_analysis, matchedChannels) => rankDrivers(driverOrder, matchedChannels)
+  formatDriverDisplayOrder: (matchedChannels) => rankDrivers(driverOrder, matchedChannels)
 };
