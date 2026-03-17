@@ -304,7 +304,7 @@ export default function App() {
     setSourceUrl(first.url ?? '');
     setPublisher(first.source_name);
     setPublishedAt(first.published_at ?? '');
-    setSourceCompleteness(first.source_completeness === 'unresolved' ? 'partial_text' : first.source_completeness);
+    setSourceCompleteness(first.source_completeness);
     setIntakeMode(nextImported.every((candidate) => candidate.source_completeness === 'unresolved') ? 'manual_url' : 'manual_text');
     setOutput(null);
   };

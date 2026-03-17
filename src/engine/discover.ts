@@ -289,8 +289,17 @@ const readRuntimeEnv = (name: string): string | undefined => {
   return processEnv?.[name] ?? processEnv?.[`VITE_${name}`];
 };
 
+const readServerRuntimeEnv = (name: string): string | undefined => {
+  const processEnv =
+    typeof globalThis !== 'undefined' && 'process' in globalThis
+      ? (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env
+      : undefined;
+
+  return processEnv?.[name];
+};
+
 const resolveTavilyConfig = (): TavilyConfig | null => {
-  const apiKey = readRuntimeEnv('TAVILY_API_KEY');
+  const apiKey = readServerRuntimeEnv('TAVILY_API_KEY');
   const baseUrl = readRuntimeEnv('TAVILY_BASE_URL') ?? 'https://api.tavily.com';
   return apiKey ? { apiKey, baseUrl } : null;
 };
