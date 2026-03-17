@@ -123,6 +123,12 @@ export const runIntake = (articles: Article[], contractId: ContractId, intakeMod
       );
     }
 
+    if (article.discovery_context) {
+      issues.add(
+        `Discovery-derived source ${article.article_id} came from ${article.discovery_context.search_provider} with ${article.discovery_context.import_readiness} import readiness.`
+      );
+    }
+
     return {
       ...article,
       intake_mode: resolvedIntakeMode,
@@ -148,11 +154,13 @@ export const runIntake = (articles: Article[], contractId: ContractId, intakeMod
     headline: article.headline,
     url: article.url,
     publisher: article.publisher,
+    source_domain: article.source_domain,
     published_at: article.published_at,
     source_type: article.source_type,
     intake_mode: article.intake_mode,
     source_origin: article.source_origin,
-    source_completeness: article.source_completeness
+    source_completeness: article.source_completeness,
+    discovery_context: article.discovery_context
   }));
 
   const candidateSummary = normalizedArticles

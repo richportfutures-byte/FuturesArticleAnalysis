@@ -92,6 +92,21 @@ const appendReasoningProvenance = (
   notes.push(`Reasoning source: failed provider path via ${providerId}.`);
 };
 
+const appendDiscoveryImportProvenance = (notes: string[], intakeSources: NonNullable<RunOutput['provenance']['intake_sources']>) => {
+  intakeSources
+    .filter((entry) => entry.discovery_context)
+    .forEach((entry) => {
+      const discovery = entry.discovery_context!;
+      notes.push(
+        `Discovery import: ${entry.article_id} came from ${discovery.search_provider} using query "${discovery.search_query}" over the last ${discovery.recency_window_hours}h with ${discovery.import_readiness} readiness.`
+      );
+
+      if (discovery.operator_edits_after_import.length > 0) {
+        notes.push(`Operator edits after import for ${entry.article_id}: ${discovery.operator_edits_after_import.join(', ')}.`);
+      }
+    });
+};
+
 export const executePipeline = async (input: RunInput, options: PipelineOptions = {}): Promise<RunOutput> => {
   const parsedInput = RunInputSchema.safeParse(input);
   if (!parsedInput.success) {
@@ -172,6 +187,7 @@ export const executePipeline = async (input: RunInput, options: PipelineOptions 
   if (intake.issues.length > 0) {
     provenance.notes.push(...intake.issues);
   }
+  appendDiscoveryImportProvenance(provenance.notes, intake.source_records);
   appendRuleTrace(provenance, intake.trace);
 
   if (intake.status === 'unresolved') {

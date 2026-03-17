@@ -4,6 +4,21 @@ import { ContractId, RunMode, SourceType } from '../domain/enums';
 export const IntakeModeSchema = z.enum(['manual_text', 'manual_url', 'fixture']);
 export const SourceOriginSchema = z.enum(['manual_paste', 'manual_url', 'fixture', 'live_fetched']);
 export const SourceCompletenessSchema = z.enum(['full_text', 'partial_text', 'unresolved']);
+export const DiscoveryAuthorityTierSchema = z.enum(['tier_1', 'tier_2', 'unlisted']);
+export const DiscoveryDirectnessSchema = z.enum(['primary_release', 'reported_summary', 'commentary']);
+
+export const DiscoveryImportContextSchema = z.object({
+  search_provider: z.string(),
+  search_timestamp: z.string(),
+  search_query: z.string(),
+  recency_window_hours: z.number().int().positive(),
+  source_domain: z.string().nullable(),
+  source_name: z.string(),
+  authority_tier: DiscoveryAuthorityTierSchema,
+  directness: DiscoveryDirectnessSchema,
+  import_readiness: SourceCompletenessSchema,
+  operator_edits_after_import: z.array(z.string())
+});
 
 export const ArticleInputSchema = z.object({
   article_id: z.string(),
@@ -15,9 +30,11 @@ export const ArticleInputSchema = z.object({
   author: z.string().optional(),
   publisher: z.string().optional(),
   notes: z.string().optional(),
+  source_domain: z.string().nullable().optional(),
   intake_mode: IntakeModeSchema.optional(),
   source_origin: SourceOriginSchema.optional(),
-  source_completeness: SourceCompletenessSchema.optional()
+  source_completeness: SourceCompletenessSchema.optional(),
+  discovery_context: DiscoveryImportContextSchema.optional()
 });
 
 export const RunInputSchema = z.object({
@@ -28,5 +45,13 @@ export const RunInputSchema = z.object({
   articles: z.array(ArticleInputSchema).min(1)
 });
 
+export const DiscoveryRequestSchema = z.object({
+  contract_id: z.nativeEnum(ContractId),
+  recency_window_hours: z.number().int().positive().default(72),
+  max_results: z.number().int().positive().default(12)
+});
+
 export type RunInput = z.input<typeof RunInputSchema>;
 export type ParsedRunInput = z.output<typeof RunInputSchema>;
+export type DiscoveryRequestInput = z.input<typeof DiscoveryRequestSchema>;
+export type DiscoveryRequest = z.output<typeof DiscoveryRequestSchema>;

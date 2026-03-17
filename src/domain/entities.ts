@@ -35,6 +35,27 @@ export type SourceCompleteness = 'full_text' | 'partial_text' | 'unresolved';
 
 export type IntakeStatus = 'ready' | 'degraded' | 'unresolved';
 
+export type DiscoveryAuthorityTier = 'tier_1' | 'tier_2' | 'unlisted';
+
+export type DiscoveryDirectness = 'primary_release' | 'reported_summary' | 'commentary';
+
+export type DiscoveryReviewBucket = 'high_confidence' | 'secondary' | 'low_authority_or_noise';
+
+export type DiscoveryStatus = 'ready' | 'empty' | 'unconfigured' | 'error';
+
+export type DiscoveryImportContext = {
+  search_provider: string;
+  search_timestamp: string;
+  search_query: string;
+  recency_window_hours: number;
+  source_domain: string | null;
+  source_name: string;
+  authority_tier: DiscoveryAuthorityTier;
+  directness: DiscoveryDirectness;
+  import_readiness: SourceCompleteness;
+  operator_edits_after_import: string[];
+};
+
 export type Article = {
   article_id: string;
   headline: string;
@@ -45,9 +66,11 @@ export type Article = {
   author?: string;
   publisher?: string;
   notes?: string;
+  source_domain?: string | null;
   intake_mode?: IntakeMode;
   source_origin?: SourceOrigin;
   source_completeness?: SourceCompleteness;
+  discovery_context?: DiscoveryImportContext;
 };
 
 export type CandidateContractRelevance = {
@@ -73,11 +96,13 @@ export type IntakeSourceRecord = {
   headline: string;
   url: string | null;
   publisher?: string;
+  source_domain?: string | null;
   published_at: string | null;
   source_type: SourceType;
   intake_mode: IntakeMode;
   source_origin: SourceOrigin;
   source_completeness: SourceCompleteness;
+  discovery_context?: DiscoveryImportContext;
 };
 
 export type IntakeSummary = {
@@ -166,11 +191,63 @@ export type DeepAnalysis = {
 export type HorizonSplit = { bucket: HorizonBucket; note: string };
 
 export type RuleTrace = {
-  stage: 'pipeline' | 'intake' | 'screen' | 'cluster' | 'analyze' | 'translate' | 'deploy';
+  stage: 'pipeline' | 'discover' | 'intake' | 'screen' | 'cluster' | 'analyze' | 'translate' | 'deploy';
   rule_id: string;
   source_files: string[];
   detail: string;
   heuristic?: boolean;
+};
+
+export type DiscoveryQueryPreset = {
+  preset_id: string;
+  label: string;
+  query: string;
+  focus_tags: string[];
+  preferred_domains: string[];
+};
+
+export type DiscoveryCandidate = {
+  id: string;
+  url: string | null;
+  title: string;
+  source_name: string;
+  source_domain: string | null;
+  source_type: SourceType;
+  authority_tier: DiscoveryAuthorityTier;
+  directness: DiscoveryDirectness;
+  published_at: string | null;
+  retrieved_at: string;
+  snippet: string;
+  import_excerpt: string;
+  source_completeness: SourceCompleteness;
+  contract_relevance_candidates: CandidateContractRelevance[];
+  freshness_score: number;
+  authority_score: number;
+  contract_theme_score: number;
+  directness_score: number;
+  import_readiness_score: number;
+  total_rank_score: number;
+  duplication_cluster_id: string;
+  cluster_suggestion: string;
+  discovery_query: string;
+  review_bucket: DiscoveryReviewBucket;
+  provenance_notes: string[];
+  search_provider: string;
+  search_timestamp: string;
+  recency_window_hours: number;
+};
+
+export type DiscoverySummary = {
+  status: DiscoveryStatus;
+  contract_id: ContractId;
+  provider_id: string;
+  retrieved_at: string;
+  recency_window_hours: number;
+  query_presets: DiscoveryQueryPreset[];
+  candidates: DiscoveryCandidate[];
+  issues: string[];
+  bucket_counts: Record<DiscoveryReviewBucket, number>;
+  trace: RuleTrace[];
 };
 
 export type TranslationResult = {

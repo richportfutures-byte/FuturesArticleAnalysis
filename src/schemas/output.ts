@@ -10,7 +10,14 @@ import {
   SourceType,
   WorkflowState
 } from '../domain/enums';
-import { IntakeModeSchema, SourceCompletenessSchema, SourceOriginSchema } from './input';
+import {
+  DiscoveryAuthorityTierSchema,
+  DiscoveryDirectnessSchema,
+  DiscoveryImportContextSchema,
+  IntakeModeSchema,
+  SourceCompletenessSchema,
+  SourceOriginSchema
+} from './input';
 
 const CandidateContractRelevanceSchema = z.object({
   contract_id: z.nativeEnum(ContractId),
@@ -83,11 +90,13 @@ const IntakeSourceRecordSchema = z.object({
   headline: z.string(),
   url: z.string().nullable(),
   publisher: z.string().optional(),
+  source_domain: z.string().nullable().optional(),
   published_at: z.string().nullable(),
   source_type: z.nativeEnum(SourceType),
   intake_mode: IntakeModeSchema,
   source_origin: SourceOriginSchema,
-  source_completeness: SourceCompletenessSchema
+  source_completeness: SourceCompletenessSchema,
+  discovery_context: DiscoveryImportContextSchema.optional()
 });
 
 const IntakeSummarySchema = z.object({
@@ -134,4 +143,68 @@ export const RunOutputSchema = z.object({
     intake_status: z.enum(['ready', 'degraded', 'unresolved']).optional(),
     intake_sources: z.array(IntakeSourceRecordSchema).optional()
   })
+});
+
+export const DiscoveryCandidateSchema = z.object({
+  id: z.string(),
+  url: z.string().nullable(),
+  title: z.string(),
+  source_name: z.string(),
+  source_domain: z.string().nullable(),
+  source_type: z.nativeEnum(SourceType),
+  authority_tier: DiscoveryAuthorityTierSchema,
+  directness: DiscoveryDirectnessSchema,
+  published_at: z.string().nullable(),
+  retrieved_at: z.string(),
+  snippet: z.string(),
+  import_excerpt: z.string(),
+  source_completeness: SourceCompletenessSchema,
+  contract_relevance_candidates: z.array(CandidateContractRelevanceSchema),
+  freshness_score: z.number(),
+  authority_score: z.number(),
+  contract_theme_score: z.number(),
+  directness_score: z.number(),
+  import_readiness_score: z.number(),
+  total_rank_score: z.number(),
+  duplication_cluster_id: z.string(),
+  cluster_suggestion: z.string(),
+  discovery_query: z.string(),
+  review_bucket: z.enum(['high_confidence', 'secondary', 'low_authority_or_noise']),
+  provenance_notes: z.array(z.string()),
+  search_provider: z.string(),
+  search_timestamp: z.string(),
+  recency_window_hours: z.number().int().positive()
+});
+
+export const DiscoverySummarySchema = z.object({
+  status: z.enum(['ready', 'empty', 'unconfigured', 'error']),
+  contract_id: z.nativeEnum(ContractId),
+  provider_id: z.string(),
+  retrieved_at: z.string(),
+  recency_window_hours: z.number().int().positive(),
+  query_presets: z.array(
+    z.object({
+      preset_id: z.string(),
+      label: z.string(),
+      query: z.string(),
+      focus_tags: z.array(z.string()),
+      preferred_domains: z.array(z.string())
+    })
+  ),
+  candidates: z.array(DiscoveryCandidateSchema),
+  issues: z.array(z.string()),
+  bucket_counts: z.object({
+    high_confidence: z.number(),
+    secondary: z.number(),
+    low_authority_or_noise: z.number()
+  }),
+  trace: z.array(
+    z.object({
+      stage: z.enum(['pipeline', 'discover', 'intake', 'screen', 'cluster', 'analyze', 'translate', 'deploy']),
+      rule_id: z.string(),
+      source_files: z.array(z.string()),
+      detail: z.string(),
+      heuristic: z.boolean().optional()
+    })
+  )
 });

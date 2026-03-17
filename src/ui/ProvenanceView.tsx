@@ -23,6 +23,9 @@ export const ProvenanceView = ({ provenance }: { provenance: ProvenanceRecord | 
                   <span className="mono">{entry.article_id}</span> | {entry.headline || 'untitled'} | {entry.source_origin} |{' '}
                   {entry.source_completeness}
                   {entry.url ? ` | ${entry.url}` : ''}
+                  {entry.discovery_context
+                    ? ` | discovery: ${entry.discovery_context.search_provider} | ${entry.discovery_context.source_name} | ${entry.discovery_context.import_readiness}`
+                    : ''}
                 </li>
               ))}
             </ul>

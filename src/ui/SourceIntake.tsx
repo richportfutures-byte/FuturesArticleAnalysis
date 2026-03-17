@@ -28,6 +28,8 @@ type Props = {
   objective: string;
   focus: string;
   parsedCount: number;
+  importedSelectionSummary?: string | null;
+  onClearImportedSelection?: () => void;
 };
 
 export const SourceIntake = ({
@@ -55,7 +57,9 @@ export const SourceIntake = ({
   onLoadSample,
   objective,
   focus,
-  parsedCount
+  parsedCount,
+  importedSelectionSummary,
+  onClearImportedSelection
 }: Props) => (
   <section className="section-copy">
     <h2>Source Intake</h2>
@@ -63,6 +67,11 @@ export const SourceIntake = ({
     <p className="muted">
       Doctrine focus: <span className="mono">{focus}</span>
     </p>
+    {importedSelectionSummary ? (
+      <p className="muted">
+        Imported discovery selection active: {importedSelectionSummary}. Generate bias brief will run on the imported candidate set unless you clear it.
+      </p>
+    ) : null}
 
     <div className="form-grid">
       <div className="input-row">
@@ -166,6 +175,11 @@ export const SourceIntake = ({
         <button type="button" className="secondary" onClick={onLoadSample}>
           Load fixture sample
         </button>
+        {importedSelectionSummary && onClearImportedSelection ? (
+          <button type="button" className="secondary" onClick={onClearImportedSelection}>
+            Clear imported selection
+          </button>
+        ) : null}
       </div>
 
       <div className="pill-row">
