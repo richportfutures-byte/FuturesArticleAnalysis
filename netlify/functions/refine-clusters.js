@@ -91,33 +91,50 @@ const extractJsonFromCompletion = (responsePayload) => {
     throw new Error('Provider returned a non-object response.');
   }
 
-  const content = responsePayload.choices?.[0]?.message?.content;
-  if (typeof content === 'string') {
-    return JSON.parse(content);
+  const blockReason = responsePayload.promptFeedback?.blockReason;
+  if (typeof blockReason === 'string' && blockReason.length > 0) {
+    throw new Error(`Provider blocked refinement output: ${blockReason}`);
   }
 
-  if (Array.isArray(content)) {
-    const text = content
-      .map((entry) => (entry?.type === 'text' ? entry.text ?? '' : ''))
-      .join('')
-      .trim();
+  const candidate = responsePayload.candidates?.[0];
+  if (!candidate || typeof candidate !== 'object') {
+    throw new Error('Provider response did not contain a candidate payload.');
+  }
 
-    if (!text) {
-      throw new Error('Provider returned an empty text payload.');
+  const finishReason = candidate.finishReason;
+  if (typeof finishReason === 'string') {
+    if (finishReason === 'SAFETY') {
+      throw new Error('Provider blocked refinement output at candidate level: SAFETY');
     }
 
-    return JSON.parse(text);
+    if (finishReason !== 'STOP') {
+      throw new Error(`Refinement output was incomplete or non-successful: ${finishReason}`);
+    }
   }
 
-  throw new Error('Provider response did not contain a JSON text payload.');
+  const parts = candidate.content?.parts;
+  if (!Array.isArray(parts)) {
+    throw new Error('Provider response did not contain candidate content parts.');
+  }
+
+  const text = parts
+    .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+    .join('')
+    .trim();
+
+  if (!text) {
+    throw new Error('Provider returned an empty text payload.');
+  }
+
+  return JSON.parse(text);
 };
 
 const getProviderConfig = () => {
-  const apiKey = process.env.OPENAI_API_KEY;
-  const model = process.env.OPENAI_MODEL;
-  const baseUrl = process.env.OPENAI_BASE_URL ?? 'https://api.openai.com/v1';
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL ?? 'gemini-3-pro-preview';
+  const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
-  if (!apiKey || !model) {
+  if (!apiKey) {
     return null;
   }
 
@@ -221,20 +238,26 @@ export const handler = async (event) => {
   }
 
   try {
-    const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
+    const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/models/${encodeURIComponent(config.model)}:generateContent`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${config.apiKey}`
+        Accept: 'application/json',
+        'x-goog-api-key': config.apiKey
       },
       body: JSON.stringify({
-        model: config.model,
-        temperature: 0.1,
-        response_format: { type: 'json_object' },
-        messages: [
-          { role: 'system', content: buildSystemPrompt() },
-          { role: 'user', content: buildUserPrompt(parsedRequest.data) }
-        ]
+        systemInstruction: {
+          parts: [{ text: buildSystemPrompt() }]
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: buildUserPrompt(parsedRequest.data) }]
+          }
+        ],
+        generationConfig: {
+          responseMimeType: 'application/json'
+        }
       })
     });
 
@@ -253,7 +276,7 @@ export const handler = async (event) => {
         status: 'refinement_unavailable',
         pre_clusters: parsedRequest.data.pre_clusters,
         issue,
-        providerId: `openai:${config.model}`
+        providerId: `gemini:${config.model}`
       });
     }
 
@@ -264,14 +287,14 @@ export const handler = async (event) => {
     return json(200, {
       status: 'refined',
       clusters: parsedCompletion.clusters,
-      providerId: `openai:${config.model}`
+      providerId: `gemini:${config.model}`
     });
   } catch (error) {
     return json(200, {
       status: 'refinement_unavailable',
       pre_clusters: parsedRequest.data.pre_clusters,
       issue: error instanceof Error ? error.message : 'Cluster refinement failed.',
-      providerId: config ? `openai:${config.model}` : undefined
+      providerId: config ? `gemini:${config.model}` : undefined
     });
   }
 };
