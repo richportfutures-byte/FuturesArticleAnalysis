@@ -121,6 +121,9 @@ const extractJsonFromCompletion = (responsePayload) => {
   return JSON.parse(text);
 };
 
+const normalizeParsedCompletion = (parsedCompletion) =>
+  Array.isArray(parsedCompletion) ? { clusters: parsedCompletion } : parsedCompletion;
+
 const getProviderConfig = () => {
   const apiKey = process.env.GEMINI_API_KEY;
   const model = process.env.GEMINI_MODEL ?? 'gemini-3.1-pro-preview';
@@ -279,7 +282,7 @@ export default async function handler(req, res) {
     }
 
     const responsePayload = await response.json();
-    const parsedCompletion = ResponseSchema.parse(extractJsonFromCompletion(responsePayload));
+    const parsedCompletion = ResponseSchema.parse(normalizeParsedCompletion(extractJsonFromCompletion(responsePayload)));
     validateClusterPartition(parsedCompletion.clusters, parsedRequest.data);
 
     return res.status(200).json({

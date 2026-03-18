@@ -1093,6 +1093,60 @@ describe('recent discovery', () => {
     }
   });
 
+  it('accepts a top-level array of refined clusters from Gemini at the Vercel boundary', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    const originalModel = process.env.GEMINI_MODEL;
+    const originalFetch = globalThis.fetch;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    delete process.env.GEMINI_MODEL;
+
+    globalThis.fetch = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              finishReason: 'STOP',
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify(buildRefinedClusterPayload().clusters)
+                  }
+                ]
+              }
+            }
+          ]
+        })
+      }) as Response
+    );
+
+    try {
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
+        body: JSON.stringify(buildRefinementBoundaryRequestBody())
+      });
+
+      expect(response.statusCode).toBe(200);
+      const payload = JSON.parse(response.body) as { status?: string; clusters?: unknown[]; providerId?: string };
+      expect(payload.status).toBe('refined');
+      expect(payload.clusters).toHaveLength(1);
+      expect(payload.providerId).toBe('gemini:gemini-3.1-pro-preview');
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalApiKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = originalApiKey;
+      }
+
+      if (originalModel === undefined) {
+        delete process.env.GEMINI_MODEL;
+      } else {
+        process.env.GEMINI_MODEL = originalModel;
+      }
+    }
+  });
+
   it('returns deterministic fallback payload from the refinement Vercel boundary when GEMINI_API_KEY is missing', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
