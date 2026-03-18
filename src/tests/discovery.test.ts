@@ -12,8 +12,10 @@ import discoverHandler from '../../api/discover.js';
 // @ts-expect-error Vitest imports the plain JS Vercel function directly for boundary coverage.
 import refineClustersHandler from '../../api/refine-clusters.js';
 
-
-const invokeVercelHandler = async (handler: (req: any, res: any) => Promise<unknown> | unknown, req: { method?: string; body?: unknown }) => {
+const invokeVercelHandler = async (
+  handler: (req: any, res: any) => Promise<unknown> | unknown,
+  req: { method?: string; body?: unknown }
+) => {
   let statusCode = 200;
   let body: unknown;
   const res = {
@@ -591,7 +593,6 @@ describe('recent discovery', () => {
     expect(output.provenance.intake_sources?.[0].discovery_context?.search_provider).toBe('mock-cross-contract-provider');
   });
 
-
   const buildRefinementBoundaryRequestBody = () => ({
     pre_clusters: [
       {
@@ -658,7 +659,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -703,7 +704,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -753,7 +754,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -798,13 +799,12 @@ describe('recent discovery', () => {
     }
   });
 
-
   it('falls back honestly when Gemini returns malformed refinement JSON at the Vercel boundary', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -824,48 +824,7 @@ describe('recent discovery', () => {
     try {
       const response = await invokeVercelHandler(refineClustersHandler, {
         method: 'POST',
-        body: JSON.stringify({
-          pre_clusters: [
-            {
-              cluster_id: 'pre-1',
-              label: 'Fed repricing / yields firm',
-              description: 'Deterministic pre-cluster',
-              member_candidate_ids: ['candidate-1'],
-              candidate_count: 1,
-              suppressed_duplicate_count: 0,
-              freshness_summary: 'latest item within 2h',
-              source_quality_summary: '1 tier-1',
-              primary_contracts: ['ZN'],
-              secondary_contracts: ['NQ'],
-              provenance_notes: ['seeded by deterministic rules']
-            }
-          ],
-          candidates_metadata: [
-            {
-              id: 'candidate-1',
-              title: 'Fed signals inflation persistence as financial conditions tighten',
-              snippet: 'Reuters says investors repriced yields after the statement.',
-              source_name: 'Reuters',
-              source_domain: 'reuters.com',
-              authority_tier: 'tier_2',
-              directness: 'reported_summary',
-              published_at: '2026-03-16T11:20:00Z',
-              retrieved_at: '2026-03-16T12:00:00Z',
-              duplication_cluster_id: 'dup-1',
-              discovery_query: 'Fed rates yields',
-              review_bucket: 'high_confidence',
-              contract_relevance_candidates: [
-                {
-                  contract_id: 'ZN',
-                  fit: 'primary',
-                  rationale: 'Treasury yields repriced.',
-                  matched_focus: ['Fed-path repricing']
-                }
-              ],
-              duplicate_suppressed_count: 0
-            }
-          ]
-        })
+        body: JSON.stringify(buildRefinementBoundaryRequestBody())
       });
 
       expect(response.statusCode).toBe(200);
@@ -894,7 +853,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
+    delete process.env.GEMINI_MODEL;
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -935,48 +894,7 @@ describe('recent discovery', () => {
     try {
       const response = await invokeVercelHandler(refineClustersHandler, {
         method: 'POST',
-        body: JSON.stringify({
-          pre_clusters: [
-            {
-              cluster_id: 'pre-1',
-              label: 'Fed repricing / yields firm',
-              description: 'Deterministic pre-cluster',
-              member_candidate_ids: ['candidate-1'],
-              candidate_count: 1,
-              suppressed_duplicate_count: 0,
-              freshness_summary: 'latest item within 2h',
-              source_quality_summary: '1 tier-1',
-              primary_contracts: ['ZN'],
-              secondary_contracts: ['NQ'],
-              provenance_notes: ['seeded by deterministic rules']
-            }
-          ],
-          candidates_metadata: [
-            {
-              id: 'candidate-1',
-              title: 'Fed signals inflation persistence as financial conditions tighten',
-              snippet: 'Reuters says investors repriced yields after the statement.',
-              source_name: 'Reuters',
-              source_domain: 'reuters.com',
-              authority_tier: 'tier_2',
-              directness: 'reported_summary',
-              published_at: '2026-03-16T11:20:00Z',
-              retrieved_at: '2026-03-16T12:00:00Z',
-              duplication_cluster_id: 'dup-1',
-              discovery_query: 'Fed rates yields',
-              review_bucket: 'high_confidence',
-              contract_relevance_candidates: [
-                {
-                  contract_id: 'ZN',
-                  fit: 'primary',
-                  rationale: 'Treasury yields repriced.',
-                  matched_focus: ['Fed-path repricing']
-                }
-              ],
-              duplicate_suppressed_count: 0
-            }
-          ]
-        })
+        body: JSON.stringify(buildRefinementBoundaryRequestBody())
       });
 
       expect(response.statusCode).toBe(200);
@@ -1017,48 +935,7 @@ describe('recent discovery', () => {
     try {
       const response = await invokeVercelHandler(refineClustersHandler, {
         method: 'POST',
-        body: JSON.stringify({
-          pre_clusters: [
-            {
-              cluster_id: 'pre-1',
-              label: 'Fed repricing / yields firm',
-              description: 'Deterministic pre-cluster',
-              member_candidate_ids: ['candidate-1'],
-              candidate_count: 1,
-              suppressed_duplicate_count: 0,
-              freshness_summary: 'latest item within 2h',
-              source_quality_summary: '1 tier-1',
-              primary_contracts: ['ZN'],
-              secondary_contracts: ['NQ'],
-              provenance_notes: ['seeded by deterministic rules']
-            }
-          ],
-          candidates_metadata: [
-            {
-              id: 'candidate-1',
-              title: 'Fed signals inflation persistence as financial conditions tighten',
-              snippet: 'Reuters says investors repriced yields after the statement.',
-              source_name: 'Reuters',
-              source_domain: 'reuters.com',
-              authority_tier: 'tier_2',
-              directness: 'reported_summary',
-              published_at: '2026-03-16T11:20:00Z',
-              retrieved_at: '2026-03-16T12:00:00Z',
-              duplication_cluster_id: 'dup-1',
-              discovery_query: 'Fed rates yields',
-              review_bucket: 'high_confidence',
-              contract_relevance_candidates: [
-                {
-                  contract_id: 'ZN',
-                  fit: 'primary',
-                  rationale: 'Treasury yields repriced.',
-                  matched_focus: ['Fed-path repricing']
-                }
-              ],
-              duplicate_suppressed_count: 0
-            }
-          ]
-        })
+        body: JSON.stringify(buildRefinementBoundaryRequestBody())
       });
 
       expect(response.statusCode).toBe(200);

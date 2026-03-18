@@ -70,7 +70,7 @@ High-level config:
 - client discovery mode selection uses `VITE_SEARCH_MODE`
 - deployed live-provider requests use the Vercel API route at `/api/reasoner` by default
 - deployed live discovery requests use the Vercel API route at `/api/discover` by default
-- server-side cluster refinement configuration uses `GEMINI_API_KEY` (server-side only) and optional `GEMINI_MODEL` (defaults to `gemini-3-pro-preview`)
+- server-side cluster refinement configuration uses `GEMINI_API_KEY` (server-side only) and optional `GEMINI_MODEL` (defaults to `gemini-3.1-pro-preview`)
 - server-side discovery configuration uses `TAVILY_API_KEY` and optional `TAVILY_BASE_URL`
 
 Important:
@@ -106,4 +106,3 @@ npm install
 npm run dev
 npm test
 npm run build
-```
