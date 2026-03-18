@@ -894,7 +894,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
+    delete process.env.GEMINI_MODEL;
 
     globalThis.fetch = vi.fn(async () =>
       ({
