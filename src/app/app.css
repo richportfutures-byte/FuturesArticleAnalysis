@@ -26,11 +26,14 @@ body {
 
 .workbench {
   min-height: 100vh;
+  max-width: 1600px;
+  margin: 0 auto;
   padding: 24px;
 }
 
 .hero {
   display: grid;
+  grid-template-columns: auto 1fr;
   gap: 18px;
   margin-bottom: 20px;
   padding: 20px 24px;
@@ -60,6 +63,7 @@ body {
   gap: 8px;
   color: var(--muted);
   max-width: 78ch;
+  justify-self: end;
 }
 
 .hero-copy p {
@@ -283,6 +287,14 @@ button.secondary {
 }
 
 @media (max-width: 900px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
+  .hero-copy {
+    justify-self: start;
+  }
+
   .panel-wide,
   .panel-tall {
     grid-column: span 1;
