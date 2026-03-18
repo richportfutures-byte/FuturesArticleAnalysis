@@ -70,7 +70,7 @@ High-level config:
 - client discovery mode selection uses `VITE_SEARCH_MODE`
 - deployed live-provider requests use the Netlify function at `/.netlify/functions/reasoner` by default
 - deployed live discovery requests use the Netlify function at `/.netlify/functions/discover` by default
-- server-side provider configuration uses `OPENAI_API_KEY`, `OPENAI_MODEL`, and optional `OPENAI_BASE_URL`
+- server-side cluster refinement configuration uses `GEMINI_API_KEY` (server-side only) and optional `GEMINI_MODEL` (defaults to `gemini-3-pro-preview`)
 - server-side discovery configuration uses `TAVILY_API_KEY` and optional `TAVILY_BASE_URL`
 
 Important:
