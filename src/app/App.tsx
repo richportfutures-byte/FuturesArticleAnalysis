@@ -445,9 +445,6 @@ export default function App() {
             setSourceCompleteness={setSourceCompleteness}
             onRun={onRun}
             onLoadSample={onLoadSample}
-            contractName={contractName}
-            objective={objective}
-            focus={focus}
             parsedCount={parsedCount}
             importedSelectionSummary={importedSelectionSummary}
             onClearImportedSelection={clearImportedSelection}

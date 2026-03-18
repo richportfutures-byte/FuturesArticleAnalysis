@@ -25,9 +25,14 @@ export const DeploymentView = ({
         </p>
         <p>{biasBrief.executive_summary}</p>
         <p className="prose">{biasBrief.prose}</p>
-        <p>
-          <strong>Contract implications:</strong> {biasBrief.contract_implications.join(' ')}
-        </p>
+        <div>
+          <strong>Contract implications:</strong>
+          <ul>
+            {biasBrief.contract_implications.map((implication) => (
+              <li key={implication}>{implication}</li>
+            ))}
+          </ul>
+        </div>
         <p>
           <strong>Alternative interpretation:</strong> {biasBrief.alternative_interpretation}
         </p>

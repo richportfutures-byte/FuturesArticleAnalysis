@@ -25,9 +25,6 @@ type Props = {
   setSourceCompleteness: (value: SourceCompleteness) => void;
   onRun: () => void;
   onLoadSample: () => void;
-  contractName: string;
-  objective: string;
-  focus: string;
   parsedCount: number;
   importedSelectionSummary?: string | null;
   onClearImportedSelection?: () => void;
@@ -56,19 +53,12 @@ export const SourceIntake = ({
   setSourceCompleteness,
   onRun,
   onLoadSample,
-  contractName,
-  objective,
-  focus,
   parsedCount,
   importedSelectionSummary,
   onClearImportedSelection
 }: Props) => (
   <section className="section-copy">
     <h2>Source Intake</h2>
-    <p>{contractId} ({contractName}): {objective}</p>
-    <p className="muted">
-      Doctrine focus: <span className="mono">{focus}</span>
-    </p>
     {importedSelectionSummary ? (
       <p className="muted">
         Imported discovery selection active: {importedSelectionSummary}. Generate bias brief will run on the imported candidate set unless you clear it.
