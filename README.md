@@ -45,7 +45,7 @@ Honest production scope:
 - live analysis is LLM-driven in live mode
 - simulated mode is explicit only
 - live mode fails closed if the provider is unavailable or returns an invalid payload
-- deployed live-provider requests go through the Netlify function
+- deployed live-provider requests go through the Vercel API route
 - doctrine is sourced from `docs/source_of_truth`
 - runtime doctrine loading still includes a temporary manual master-guide fallback until a checked-in extracted text artifact replaces it
 
@@ -68,13 +68,13 @@ This app does not:
 High-level config:
 - client mode selection uses `VITE_REASONER_MODE`
 - client discovery mode selection uses `VITE_SEARCH_MODE`
-- deployed live-provider requests use the Netlify function at `/.netlify/functions/reasoner` by default
-- deployed live discovery requests use the Netlify function at `/.netlify/functions/discover` by default
-- server-side cluster refinement configuration uses `GEMINI_API_KEY` (server-side only) and optional `GEMINI_MODEL` (defaults to `gemini-3-pro-preview`)
+- deployed live-provider requests use the Vercel API route at `/api/reasoner` by default
+- deployed live discovery requests use the Vercel API route at `/api/discover` by default
+- server-side cluster refinement configuration uses `GEMINI_API_KEY` (server-side only) and optional `GEMINI_MODEL` (defaults to `gemini-3.1-pro-preview`)
 - server-side discovery configuration uses `TAVILY_API_KEY` and optional `TAVILY_BASE_URL`
 
 Important:
-- live mode on Netlify is designed to keep the API key server-side
+- live mode on Vercel is designed to keep the API key server-side
 - `VITE_SEARCH_MODE` supports `live` (default) and `simulated`
 - `TAVILY_API_KEY` must remain server-side only and must never be exposed as `VITE_TAVILY_API_KEY`
 - simulated mode must be chosen explicitly

@@ -7,10 +7,32 @@ import {
   type EventClusterRefinementProvider
 } from '../engine/discover';
 import { executePipeline } from '../engine/pipeline';
-// @ts-expect-error Vitest imports the plain JS Netlify function directly for boundary coverage.
-import { handler as discoverHandler } from '../../netlify/functions/discover.js';
-// @ts-expect-error Vitest imports the plain JS Netlify function directly for boundary coverage.
-import { handler as refineClustersHandler } from '../../netlify/functions/refine-clusters.js';
+// @ts-expect-error Vitest imports the plain JS Vercel function directly for boundary coverage.
+import discoverHandler from '../../api/discover.js';
+// @ts-expect-error Vitest imports the plain JS Vercel function directly for boundary coverage.
+import refineClustersHandler from '../../api/refine-clusters.js';
+
+
+const invokeVercelHandler = async (handler: (req: any, res: any) => Promise<unknown> | unknown, req: { method?: string; body?: unknown }) => {
+  let statusCode = 200;
+  let body: unknown;
+  const res = {
+    status(code: number) {
+      statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      body = payload;
+      return this;
+    }
+  };
+
+  await handler({ method: req.method, body: req.body }, res);
+  return {
+    statusCode,
+    body: JSON.stringify(body)
+  };
+};
 
 const buildCrossContractProvider = (): DiscoveryProvider => ({
   providerId: 'mock-cross-contract-provider',
@@ -301,13 +323,13 @@ describe('recent discovery', () => {
     expect(seventyTwoHourItem!.freshness_score).toBeGreaterThan(seventyThreeHourItem!.freshness_score);
   });
 
-  it('returns a fail-closed payload when TAVILY_API_KEY is missing at the Netlify boundary', async () => {
+  it('returns a fail-closed payload when TAVILY_API_KEY is missing at the Vercel boundary', async () => {
     const originalApiKey = process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_API_KEY;
 
     try {
-      const response = await discoverHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(discoverHandler, {
+        method: 'POST',
         body: JSON.stringify({
           recency_window_hours: 72,
           max_results: 12,
@@ -631,7 +653,7 @@ describe('recent discovery', () => {
     ]
   });
 
-  it('falls back honestly when Gemini promptFeedback blocks refinement output at the Netlify boundary', async () => {
+  it('falls back honestly when Gemini promptFeedback blocks refinement output at the Vercel boundary', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
@@ -650,8 +672,8 @@ describe('recent discovery', () => {
     );
 
     try {
-      const response = await refineClustersHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
         body: JSON.stringify(buildRefinementBoundaryRequestBody())
       });
 
@@ -676,7 +698,7 @@ describe('recent discovery', () => {
     }
   });
 
-  it('falls back honestly when Gemini candidate finishReason is SAFETY at the Netlify boundary', async () => {
+  it('falls back honestly when Gemini candidate finishReason is SAFETY at the Vercel boundary', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
@@ -700,8 +722,8 @@ describe('recent discovery', () => {
     );
 
     try {
-      const response = await refineClustersHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
         body: JSON.stringify(buildRefinementBoundaryRequestBody())
       });
 
@@ -726,7 +748,7 @@ describe('recent discovery', () => {
     }
   });
 
-  it('falls back honestly when Gemini candidate finishReason is non-STOP at the Netlify boundary', async () => {
+  it('falls back honestly when Gemini candidate finishReason is non-STOP at the Vercel boundary', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
@@ -750,8 +772,8 @@ describe('recent discovery', () => {
     );
 
     try {
-      const response = await refineClustersHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
         body: JSON.stringify(buildRefinementBoundaryRequestBody())
       });
 
@@ -777,7 +799,7 @@ describe('recent discovery', () => {
   });
 
 
-  it('falls back honestly when Gemini returns malformed refinement JSON at the Netlify boundary', async () => {
+  it('falls back honestly when Gemini returns malformed refinement JSON at the Vercel boundary', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
@@ -800,8 +822,8 @@ describe('recent discovery', () => {
     );
 
     try {
-      const response = await refineClustersHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
         body: JSON.stringify({
           pre_clusters: [
             {
@@ -867,7 +889,7 @@ describe('recent discovery', () => {
     }
   });
 
-  it('accepts validated refined clusters from Gemini at the Netlify boundary', async () => {
+  it('accepts validated refined clusters from Gemini at the Vercel boundary', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
@@ -911,8 +933,8 @@ describe('recent discovery', () => {
     );
 
     try {
-      const response = await refineClustersHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
         body: JSON.stringify({
           pre_clusters: [
             {
@@ -986,15 +1008,15 @@ describe('recent discovery', () => {
     }
   });
 
-  it('returns deterministic fallback payload from the refinement Netlify boundary when GEMINI_API_KEY is missing', async () => {
+  it('returns deterministic fallback payload from the refinement Vercel boundary when GEMINI_API_KEY is missing', async () => {
     const originalApiKey = process.env.GEMINI_API_KEY;
     const originalModel = process.env.GEMINI_MODEL;
     delete process.env.GEMINI_API_KEY;
     delete process.env.GEMINI_MODEL;
 
     try {
-      const response = await refineClustersHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
         body: JSON.stringify({
           pre_clusters: [
             {
