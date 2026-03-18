@@ -204,6 +204,7 @@ export default function App() {
   const deferredSourceUrl = useDeferredValue(sourceUrl);
 
   const doctrine = contractOverrides[contractId];
+  const contractName = doctrine.meta.name;
   const objective = doctrine.meta.primary_objective;
   const focus = doctrine.meta.core_transmission_focus.join(', ');
   const deploymentWindows = doctrine.meta.deployment_windows.slice(0, 2).join(' | ');
@@ -379,7 +380,7 @@ export default function App() {
           <h1>Doctrine-Grounded Futures Bias Briefs</h1>
         </div>
         <div className="hero-copy">
-          <p>{objective}</p>
+          <p>{contractId} ({contractName}): {objective}</p>
           <p>
             <strong>Focus:</strong> {focus}
           </p>
@@ -444,6 +445,7 @@ export default function App() {
             setSourceCompleteness={setSourceCompleteness}
             onRun={onRun}
             onLoadSample={onLoadSample}
+            contractName={contractName}
             objective={objective}
             focus={focus}
             parsedCount={parsedCount}

@@ -25,6 +25,7 @@ type Props = {
   setSourceCompleteness: (value: SourceCompleteness) => void;
   onRun: () => void;
   onLoadSample: () => void;
+  contractName: string;
   objective: string;
   focus: string;
   parsedCount: number;
@@ -55,6 +56,7 @@ export const SourceIntake = ({
   setSourceCompleteness,
   onRun,
   onLoadSample,
+  contractName,
   objective,
   focus,
   parsedCount,
@@ -63,7 +65,7 @@ export const SourceIntake = ({
 }: Props) => (
   <section className="section-copy">
     <h2>Source Intake</h2>
-    <p>{objective}</p>
+    <p>{contractId} ({contractName}): {objective}</p>
     <p className="muted">
       Doctrine focus: <span className="mono">{focus}</span>
     </p>

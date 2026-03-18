@@ -24,7 +24,7 @@ Completed:
 - bounded doctrine evaluation and bounded bias brief generation
 - manual-text intake as the production-ready path
 - fixture intake as an explicit supported path
-- Netlify live-provider path through the server-side function
+- Vercel live-provider path through the server-side function
 
 ## Current honest limitations
 
