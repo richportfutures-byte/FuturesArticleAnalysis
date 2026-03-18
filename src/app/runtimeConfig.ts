@@ -22,7 +22,7 @@ export const resolveClientRequestedMode = (
 
 export const resolveReasonerEndpoint = (
   env: RuntimeEnv = import.meta.env as Record<string, string | undefined>
-): string => readEnvValue(env, 'REASONER_ENDPOINT') ?? '/.netlify/functions/reasoner';
+): string => readEnvValue(env, 'REASONER_ENDPOINT') ?? '/api/reasoner';
 
 export const fetchClientReasonerStatus = async (
   env: RuntimeEnv = import.meta.env as Record<string, string | undefined>,

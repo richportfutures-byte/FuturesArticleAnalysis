@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { ContractId, RunMode, SourceType } from '../domain/enums';
 import {
   runCrossContractMorningCoverageScan,
@@ -7,10 +7,32 @@ import {
   type EventClusterRefinementProvider
 } from '../engine/discover';
 import { executePipeline } from '../engine/pipeline';
-// @ts-expect-error Vitest imports the plain JS Netlify function directly for boundary coverage.
-import { handler as discoverHandler } from '../../netlify/functions/discover.js';
-// @ts-expect-error Vitest imports the plain JS Netlify function directly for boundary coverage.
-import { handler as refineClustersHandler } from '../../netlify/functions/refine-clusters.js';
+// @ts-expect-error Vitest imports the plain JS Vercel function directly for boundary coverage.
+import discoverHandler from '../../api/discover.js';
+// @ts-expect-error Vitest imports the plain JS Vercel function directly for boundary coverage.
+import refineClustersHandler from '../../api/refine-clusters.js';
+
+
+const invokeVercelHandler = async (handler: (req: any, res: any) => Promise<unknown> | unknown, req: { method?: string; body?: unknown }) => {
+  let statusCode = 200;
+  let body: unknown;
+  const res = {
+    status(code: number) {
+      statusCode = code;
+      return this;
+    },
+    json(payload: unknown) {
+      body = payload;
+      return this;
+    }
+  };
+
+  await handler({ method: req.method, body: req.body }, res);
+  return {
+    statusCode,
+    body: JSON.stringify(body)
+  };
+};
 
 const buildCrossContractProvider = (): DiscoveryProvider => ({
   providerId: 'mock-cross-contract-provider',
@@ -301,13 +323,13 @@ describe('recent discovery', () => {
     expect(seventyTwoHourItem!.freshness_score).toBeGreaterThan(seventyThreeHourItem!.freshness_score);
   });
 
-  it('returns a fail-closed payload when TAVILY_API_KEY is missing at the Netlify boundary', async () => {
+  it('returns a fail-closed payload when TAVILY_API_KEY is missing at the Vercel boundary', async () => {
     const originalApiKey = process.env.TAVILY_API_KEY;
     delete process.env.TAVILY_API_KEY;
 
     try {
-      const response = await discoverHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(discoverHandler, {
+        method: 'POST',
         body: JSON.stringify({
           recency_window_hours: 72,
           max_results: 12,
@@ -569,15 +591,432 @@ describe('recent discovery', () => {
     expect(output.provenance.intake_sources?.[0].discovery_context?.search_provider).toBe('mock-cross-contract-provider');
   });
 
-  it('returns deterministic fallback payload from the refinement Netlify boundary when OPENAI_API_KEY is missing', async () => {
-    const originalApiKey = process.env.OPENAI_API_KEY;
-    const originalModel = process.env.OPENAI_MODEL;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_MODEL;
+
+  const buildRefinementBoundaryRequestBody = () => ({
+    pre_clusters: [
+      {
+        cluster_id: 'pre-1',
+        label: 'Fed repricing / yields firm',
+        description: 'Deterministic pre-cluster',
+        member_candidate_ids: ['candidate-1'],
+        candidate_count: 1,
+        suppressed_duplicate_count: 0,
+        freshness_summary: 'latest item within 2h',
+        source_quality_summary: '1 tier-1',
+        primary_contracts: ['ZN'],
+        secondary_contracts: ['NQ'],
+        provenance_notes: ['seeded by deterministic rules']
+      }
+    ],
+    candidates_metadata: [
+      {
+        id: 'candidate-1',
+        title: 'Fed signals inflation persistence as financial conditions tighten',
+        snippet: 'Reuters says investors repriced yields after the statement.',
+        source_name: 'Reuters',
+        source_domain: 'reuters.com',
+        authority_tier: 'tier_2',
+        directness: 'reported_summary',
+        published_at: '2026-03-16T11:20:00Z',
+        retrieved_at: '2026-03-16T12:00:00Z',
+        duplication_cluster_id: 'dup-1',
+        discovery_query: 'Fed rates yields',
+        review_bucket: 'high_confidence',
+        contract_relevance_candidates: [
+          {
+            contract_id: 'ZN',
+            fit: 'primary',
+            rationale: 'Treasury yields repriced.',
+            matched_focus: ['Fed-path repricing']
+          }
+        ],
+        duplicate_suppressed_count: 0
+      }
+    ]
+  });
+
+  const buildRefinedClusterPayload = () => ({
+    clusters: [
+      {
+        cluster_id: 'refined-1',
+        label: 'Fed repricing / yields firm',
+        description: 'Refined output',
+        member_candidate_ids: ['candidate-1'],
+        candidate_count: 1,
+        suppressed_duplicate_count: 0,
+        freshness_summary: 'latest item within 2h',
+        source_quality_summary: '1 tier-1',
+        primary_contracts: ['ZN'],
+        secondary_contracts: ['NQ'],
+        provenance_notes: ['refined by gemini']
+      }
+    ]
+  });
+
+  it('falls back honestly when Gemini promptFeedback blocks refinement output at the Vercel boundary', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    const originalModel = process.env.GEMINI_MODEL;
+    const originalFetch = globalThis.fetch;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+
+    globalThis.fetch = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          promptFeedback: {
+            blockReason: 'SAFETY'
+          }
+        })
+      }) as Response
+    );
 
     try {
-      const response = await refineClustersHandler({
-        httpMethod: 'POST',
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
+        body: JSON.stringify(buildRefinementBoundaryRequestBody())
+      });
+
+      expect(response.statusCode).toBe(200);
+      const payload = JSON.parse(response.body) as { status?: string; pre_clusters?: unknown[]; issue?: string };
+      expect(payload.status).toBe('refinement_unavailable');
+      expect(payload.pre_clusters).toHaveLength(1);
+      expect(payload.issue).toMatch(/blocked refinement output/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalApiKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = originalApiKey;
+      }
+
+      if (originalModel === undefined) {
+        delete process.env.GEMINI_MODEL;
+      } else {
+        process.env.GEMINI_MODEL = originalModel;
+      }
+    }
+  });
+
+  it('falls back honestly when Gemini candidate finishReason is SAFETY at the Vercel boundary', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    const originalModel = process.env.GEMINI_MODEL;
+    const originalFetch = globalThis.fetch;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+
+    globalThis.fetch = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              finishReason: 'SAFETY',
+              content: {
+                parts: [{ text: JSON.stringify(buildRefinedClusterPayload()) }]
+              }
+            }
+          ]
+        })
+      }) as Response
+    );
+
+    try {
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
+        body: JSON.stringify(buildRefinementBoundaryRequestBody())
+      });
+
+      expect(response.statusCode).toBe(200);
+      const payload = JSON.parse(response.body) as { status?: string; pre_clusters?: unknown[]; issue?: string };
+      expect(payload.status).toBe('refinement_unavailable');
+      expect(payload.pre_clusters).toHaveLength(1);
+      expect(payload.issue).toMatch(/candidate level: SAFETY/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalApiKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = originalApiKey;
+      }
+
+      if (originalModel === undefined) {
+        delete process.env.GEMINI_MODEL;
+      } else {
+        process.env.GEMINI_MODEL = originalModel;
+      }
+    }
+  });
+
+  it('falls back honestly when Gemini candidate finishReason is non-STOP at the Vercel boundary', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    const originalModel = process.env.GEMINI_MODEL;
+    const originalFetch = globalThis.fetch;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+
+    globalThis.fetch = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              finishReason: 'MAX_TOKENS',
+              content: {
+                parts: [{ text: JSON.stringify(buildRefinedClusterPayload()) }]
+              }
+            }
+          ]
+        })
+      }) as Response
+    );
+
+    try {
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
+        body: JSON.stringify(buildRefinementBoundaryRequestBody())
+      });
+
+      expect(response.statusCode).toBe(200);
+      const payload = JSON.parse(response.body) as { status?: string; pre_clusters?: unknown[]; issue?: string };
+      expect(payload.status).toBe('refinement_unavailable');
+      expect(payload.pre_clusters).toHaveLength(1);
+      expect(payload.issue).toMatch(/non-successful: MAX_TOKENS/i);
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalApiKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = originalApiKey;
+      }
+
+      if (originalModel === undefined) {
+        delete process.env.GEMINI_MODEL;
+      } else {
+        process.env.GEMINI_MODEL = originalModel;
+      }
+    }
+  });
+
+
+  it('falls back honestly when Gemini returns malformed refinement JSON at the Vercel boundary', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    const originalModel = process.env.GEMINI_MODEL;
+    const originalFetch = globalThis.fetch;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+
+    globalThis.fetch = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              content: {
+                parts: [{ text: '{"clusters":[{"cluster_id":"bad"}]}' }]
+              }
+            }
+          ]
+        })
+      }) as Response
+    );
+
+    try {
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
+        body: JSON.stringify({
+          pre_clusters: [
+            {
+              cluster_id: 'pre-1',
+              label: 'Fed repricing / yields firm',
+              description: 'Deterministic pre-cluster',
+              member_candidate_ids: ['candidate-1'],
+              candidate_count: 1,
+              suppressed_duplicate_count: 0,
+              freshness_summary: 'latest item within 2h',
+              source_quality_summary: '1 tier-1',
+              primary_contracts: ['ZN'],
+              secondary_contracts: ['NQ'],
+              provenance_notes: ['seeded by deterministic rules']
+            }
+          ],
+          candidates_metadata: [
+            {
+              id: 'candidate-1',
+              title: 'Fed signals inflation persistence as financial conditions tighten',
+              snippet: 'Reuters says investors repriced yields after the statement.',
+              source_name: 'Reuters',
+              source_domain: 'reuters.com',
+              authority_tier: 'tier_2',
+              directness: 'reported_summary',
+              published_at: '2026-03-16T11:20:00Z',
+              retrieved_at: '2026-03-16T12:00:00Z',
+              duplication_cluster_id: 'dup-1',
+              discovery_query: 'Fed rates yields',
+              review_bucket: 'high_confidence',
+              contract_relevance_candidates: [
+                {
+                  contract_id: 'ZN',
+                  fit: 'primary',
+                  rationale: 'Treasury yields repriced.',
+                  matched_focus: ['Fed-path repricing']
+                }
+              ],
+              duplicate_suppressed_count: 0
+            }
+          ]
+        })
+      });
+
+      expect(response.statusCode).toBe(200);
+      const payload = JSON.parse(response.body) as { status?: string; pre_clusters?: unknown[]; issue?: string };
+      expect(payload.status).toBe('refinement_unavailable');
+      expect(payload.pre_clusters).toHaveLength(1);
+      expect(payload.issue).toBeTruthy();
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalApiKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = originalApiKey;
+      }
+
+      if (originalModel === undefined) {
+        delete process.env.GEMINI_MODEL;
+      } else {
+        process.env.GEMINI_MODEL = originalModel;
+      }
+    }
+  });
+
+  it('accepts validated refined clusters from Gemini at the Vercel boundary', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    const originalModel = process.env.GEMINI_MODEL;
+    const originalFetch = globalThis.fetch;
+    process.env.GEMINI_API_KEY = 'test-gemini-key';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
+
+    globalThis.fetch = vi.fn(async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          candidates: [
+            {
+              finishReason: 'STOP',
+              content: {
+                parts: [
+                  {
+                    text: JSON.stringify({
+                      clusters: [
+                        {
+                          cluster_id: 'refined-1',
+                          label: 'Fed repricing / yields firm',
+                          description: 'Refined output',
+                          member_candidate_ids: ['candidate-1'],
+                          candidate_count: 1,
+                          suppressed_duplicate_count: 0,
+                          freshness_summary: 'latest item within 2h',
+                          source_quality_summary: '1 tier-1',
+                          primary_contracts: ['ZN'],
+                          secondary_contracts: ['NQ'],
+                          provenance_notes: ['refined by gemini']
+                        }
+                      ]
+                    })
+                  }
+                ]
+              }
+            }
+          ]
+        })
+      }) as Response
+    );
+
+    try {
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
+        body: JSON.stringify({
+          pre_clusters: [
+            {
+              cluster_id: 'pre-1',
+              label: 'Fed repricing / yields firm',
+              description: 'Deterministic pre-cluster',
+              member_candidate_ids: ['candidate-1'],
+              candidate_count: 1,
+              suppressed_duplicate_count: 0,
+              freshness_summary: 'latest item within 2h',
+              source_quality_summary: '1 tier-1',
+              primary_contracts: ['ZN'],
+              secondary_contracts: ['NQ'],
+              provenance_notes: ['seeded by deterministic rules']
+            }
+          ],
+          candidates_metadata: [
+            {
+              id: 'candidate-1',
+              title: 'Fed signals inflation persistence as financial conditions tighten',
+              snippet: 'Reuters says investors repriced yields after the statement.',
+              source_name: 'Reuters',
+              source_domain: 'reuters.com',
+              authority_tier: 'tier_2',
+              directness: 'reported_summary',
+              published_at: '2026-03-16T11:20:00Z',
+              retrieved_at: '2026-03-16T12:00:00Z',
+              duplication_cluster_id: 'dup-1',
+              discovery_query: 'Fed rates yields',
+              review_bucket: 'high_confidence',
+              contract_relevance_candidates: [
+                {
+                  contract_id: 'ZN',
+                  fit: 'primary',
+                  rationale: 'Treasury yields repriced.',
+                  matched_focus: ['Fed-path repricing']
+                }
+              ],
+              duplicate_suppressed_count: 0
+            }
+          ]
+        })
+      });
+
+      expect(response.statusCode).toBe(200);
+      const payload = JSON.parse(response.body) as { status?: string; clusters?: unknown[]; providerId?: string };
+      expect(payload.status).toBe('refined');
+      expect(payload.clusters).toHaveLength(1);
+      expect(payload.providerId).toBe('gemini:gemini-3.1-pro-preview');
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        expect.stringContaining('/models/gemini-3.1-pro-preview:generateContent'),
+        expect.objectContaining({
+          headers: expect.objectContaining({
+            'x-goog-api-key': 'test-gemini-key'
+          })
+        })
+      );
+    } finally {
+      globalThis.fetch = originalFetch;
+      if (originalApiKey === undefined) {
+        delete process.env.GEMINI_API_KEY;
+      } else {
+        process.env.GEMINI_API_KEY = originalApiKey;
+      }
+
+      if (originalModel === undefined) {
+        delete process.env.GEMINI_MODEL;
+      } else {
+        process.env.GEMINI_MODEL = originalModel;
+      }
+    }
+  });
+
+  it('returns deterministic fallback payload from the refinement Vercel boundary when GEMINI_API_KEY is missing', async () => {
+    const originalApiKey = process.env.GEMINI_API_KEY;
+    const originalModel = process.env.GEMINI_MODEL;
+    delete process.env.GEMINI_API_KEY;
+    delete process.env.GEMINI_MODEL;
+
+    try {
+      const response = await invokeVercelHandler(refineClustersHandler, {
+        method: 'POST',
         body: JSON.stringify({
           pre_clusters: [
             {
@@ -628,15 +1067,15 @@ describe('recent discovery', () => {
       expect(payload.pre_clusters).toHaveLength(1);
     } finally {
       if (originalApiKey === undefined) {
-        delete process.env.OPENAI_API_KEY;
+        delete process.env.GEMINI_API_KEY;
       } else {
-        process.env.OPENAI_API_KEY = originalApiKey;
+        process.env.GEMINI_API_KEY = originalApiKey;
       }
 
       if (originalModel === undefined) {
-        delete process.env.OPENAI_MODEL;
+        delete process.env.GEMINI_MODEL;
       } else {
-        process.env.OPENAI_MODEL = originalModel;
+        process.env.GEMINI_MODEL = originalModel;
       }
     }
   });
