@@ -1,11 +1,3 @@
-const json = (statusCode, payload) => ({
-  statusCode,
-  headers: {
-    'Content-Type': 'application/json'
-  },
-  body: JSON.stringify(payload)
-});
-
 const MIN_RECENCY_HOURS = 6;
 const MAX_RECENCY_HOURS = 168;
 const MAX_RESULTS = 18;
@@ -37,36 +29,42 @@ const mapTavilyResults = (payload, preset) =>
       provenance_notes: [`Discovery preset ${preset.preset_id} retrieved this candidate.`]
     }));
 
-export const handler = async (event) => {
-  if (event.httpMethod === 'GET') {
+export default async function handler(req, res) {
+  if (req.method === 'GET') {
     const config = getProviderConfig();
-    return json(200, {
+    return res.status(200).json({
       configured: Boolean(config),
       providerId: config ? 'tavily:news-search' : 'unconfigured-discovery-provider'
     });
   }
 
-  if (event.httpMethod !== 'POST') {
-    return json(405, { issue: 'Method not allowed.' });
+  if (req.method !== 'POST') {
+    return res.status(405).json({ issue: 'Method not allowed.' });
   }
 
   const config = getProviderConfig();
   if (!config) {
-    return json(503, {
+    return res.status(503).json({
       issue: 'Discovery provider is unavailable. Configure TAVILY_API_KEY on the server to enable live discovery.'
     });
   }
 
   let requestBody;
   try {
-    requestBody = event.body ? JSON.parse(event.body) : {};
+    if (req.body === null || req.body === undefined) {
+      requestBody = {};
+    } else if (typeof req.body === 'object') {
+      requestBody = req.body;
+    } else {
+      requestBody = JSON.parse(String(req.body));
+    }
   } catch {
-    return json(400, { issue: 'Invalid JSON request body.' });
+    return res.status(400).json({ issue: 'Invalid JSON request body.' });
   }
 
   const queryPresets = Array.isArray(requestBody.query_presets) ? requestBody.query_presets : [];
   if (queryPresets.length === 0) {
-    return json(400, { issue: 'Discovery request must include at least one query preset.' });
+    return res.status(400).json({ issue: 'Discovery request must include at least one query preset.' });
   }
 
   const recencyWindowHours = normalizeRecencyWindowHours(requestBody.recency_window_hours);
@@ -104,7 +102,7 @@ export const handler = async (event) => {
         // Keep HTTP status fallback.
       }
 
-      return json(502, {
+      return res.status(502).json({
         issue: `Discovery provider tavily:news-search failed: ${issue}.`,
         retrieved_at: retrievedAt
       });
@@ -113,8 +111,8 @@ export const handler = async (event) => {
     items.push(...mapTavilyResults(await response.json(), preset));
   }
 
-  return json(200, {
+  return res.status(200).json({
     items,
     retrieved_at: retrievedAt
   });
-};
+}

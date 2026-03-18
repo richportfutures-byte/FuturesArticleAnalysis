@@ -5,11 +5,11 @@ import { executePipeline } from '../engine/pipeline';
 import { LiveReasoningProvider } from '../engine/reasoner';
 
 describe('deployment readiness', () => {
-  it('reports configured live status from the Netlify health endpoint', async () => {
+  it('reports configured live status from the Vercel health endpoint', async () => {
     const status = await fetchClientReasonerStatus(
       {
         VITE_REASONER_MODE: 'live',
-        VITE_REASONER_ENDPOINT: '/.netlify/functions/reasoner'
+        VITE_REASONER_ENDPOINT: '/api/reasoner'
       },
       async () =>
         ({
@@ -35,7 +35,7 @@ describe('deployment readiness', () => {
 
   it('completes end to end for manual_text input when live mode is configured explicitly', async () => {
     const liveProvider: LiveReasoningProvider = {
-      providerId: 'netlify-live-provider-test',
+      providerId: 'vercel-live-provider-test',
       generateAnalysis: async () => ({
         core_claim: 'NQ has a source-grounded macro transmission path.',
         confirmed_facts: ['Primary reporting confirms a macro catalyst.'],
@@ -112,7 +112,7 @@ describe('deployment readiness', () => {
     expect(output.translation).not.toBeNull();
     expect(output.bias_brief).not.toBeNull();
     expect(output.deployment_use).not.toBe('no_trade');
-    expect(output.provenance.notes).toContain('Reasoning source: live provider via netlify-live-provider-test.');
+    expect(output.provenance.notes).toContain('Reasoning source: live provider via vercel-live-provider-test.');
   });
 
   it('fails closed by default when live mode is selected but no provider is configured', async () => {

@@ -658,7 +658,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -703,7 +703,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -753,7 +753,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -804,7 +804,7 @@ describe('recent discovery', () => {
     const originalModel = process.env.GEMINI_MODEL;
     const originalFetch = globalThis.fetch;
     process.env.GEMINI_API_KEY = 'test-gemini-key';
-    process.env.GEMINI_MODEL = 'gemini-3-pro-preview';
+    process.env.GEMINI_MODEL = 'gemini-3.1-pro-preview';
 
     globalThis.fetch = vi.fn(async () =>
       ({
@@ -983,9 +983,9 @@ describe('recent discovery', () => {
       const payload = JSON.parse(response.body) as { status?: string; clusters?: unknown[]; providerId?: string };
       expect(payload.status).toBe('refined');
       expect(payload.clusters).toHaveLength(1);
-      expect(payload.providerId).toBe('gemini:gemini-3-pro-preview');
+      expect(payload.providerId).toBe('gemini:gemini-3.1-pro-preview');
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        expect.stringContaining('/models/gemini-3-pro-preview:generateContent'),
+        expect.stringContaining('/models/gemini-3.1-pro-preview:generateContent'),
         expect.objectContaining({
           headers: expect.objectContaining({
             'x-goog-api-key': 'test-gemini-key'
