@@ -357,7 +357,7 @@ const resolveOpenAIProviderConfig = (): OpenAIProviderConfig | null => {
 };
 
 const resolveFunctionProviderConfig = (): FunctionProviderConfig => ({
-  endpoint: readRuntimeEnv('REASONER_ENDPOINT') ?? '/.netlify/functions/reasoner'
+  endpoint: readRuntimeEnv('REASONER_ENDPOINT') ?? '/api/reasoner'
 });
 
 const buildProviderSystemPrompt = (request: ReasoningRequest): string =>
@@ -527,8 +527,8 @@ export const createOpenAIReasoningProvider = (config: OpenAIProviderConfig): Liv
   }
 });
 
-export const createNetlifyFunctionReasoningProvider = (config: FunctionProviderConfig): LiveReasoningProvider => ({
-  providerId: `netlify-function:${config.endpoint}`,
+export const createVercelFunctionReasoningProvider = (config: FunctionProviderConfig): LiveReasoningProvider => ({
+  providerId: `vercel-function:${config.endpoint}`,
   generateAnalysis: async (request: ReasoningRequest) => {
     const response = await fetch(config.endpoint, {
       method: 'POST',
@@ -556,7 +556,7 @@ export const createNetlifyFunctionReasoningProvider = (config: FunctionProviderC
 
 const resolveLiveProvider = (): LiveReasoningProvider | null => {
   if (typeof window !== 'undefined') {
-    return createNetlifyFunctionReasoningProvider(resolveFunctionProviderConfig());
+    return createVercelFunctionReasoningProvider(resolveFunctionProviderConfig());
   }
 
   const openAIConfig = resolveOpenAIProviderConfig();

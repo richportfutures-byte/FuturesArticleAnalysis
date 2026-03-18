@@ -305,7 +305,7 @@ const resolveTavilyConfig = (): TavilyConfig | null => {
 };
 
 const resolveFunctionProviderConfig = (): FunctionProviderConfig => ({
-  endpoint: readRuntimeEnv('DISCOVERY_ENDPOINT') ?? '/.netlify/functions/discover'
+  endpoint: readRuntimeEnv('DISCOVERY_ENDPOINT') ?? '/api/discover'
 });
 
 const resolveSearchMode = (): 'live' | 'simulated' => (readRuntimeEnv('VITE_SEARCH_MODE') === 'simulated' ? 'simulated' : 'live');
@@ -1028,8 +1028,8 @@ export const createTavilyDiscoveryProvider = (config: TavilyConfig): DiscoveryPr
   }
 });
 
-export const createNetlifyFunctionDiscoveryProvider = (config: FunctionProviderConfig): DiscoveryProvider => ({
-  providerId: `netlify-function:${config.endpoint}`,
+export const createVercelFunctionDiscoveryProvider = (config: FunctionProviderConfig): DiscoveryProvider => ({
+  providerId: `vercel-function:${config.endpoint}`,
   configured: true,
   search: async (request) => {
     const response = await fetch(config.endpoint, {
@@ -1065,7 +1065,7 @@ const createUnconfiguredProvider = (): DiscoveryProvider => ({
   search: async () => ({
     items: [],
     issue:
-      'Discovery provider is unavailable. Configure TAVILY_API_KEY server-side or use a deployed Netlify discovery function endpoint.',
+      'Discovery provider is unavailable. Configure TAVILY_API_KEY server-side or use a deployed Vercel discovery function endpoint.',
     retrieved_at: new Date().toISOString()
   })
 });
@@ -1076,7 +1076,7 @@ const resolveDiscoveryProvider = (): DiscoveryProvider => {
   }
 
   if (typeof window !== 'undefined') {
-    return createNetlifyFunctionDiscoveryProvider(resolveFunctionProviderConfig());
+    return createVercelFunctionDiscoveryProvider(resolveFunctionProviderConfig());
   }
 
   const tavilyConfig = resolveTavilyConfig();
@@ -1129,13 +1129,13 @@ type ClusterRefinementFunctionConfig = {
 };
 
 const resolveClusterRefinementFunctionConfig = (): ClusterRefinementFunctionConfig => ({
-  endpoint: readRuntimeEnv('REFINE_CLUSTERS_ENDPOINT') ?? '/.netlify/functions/refine-clusters'
+  endpoint: readRuntimeEnv('REFINE_CLUSTERS_ENDPOINT') ?? '/api/refine-clusters'
 });
 
-export const createNetlifyFunctionEventClusterRefinementProvider = (
+export const createVercelFunctionEventClusterRefinementProvider = (
   config: ClusterRefinementFunctionConfig
 ): EventClusterRefinementProvider => ({
-  providerId: `netlify-function:${config.endpoint}`,
+  providerId: `vercel-function:${config.endpoint}`,
   configured: true,
   refine: async (request) => {
     const response = await fetch(config.endpoint, {
@@ -1193,7 +1193,7 @@ const resolveEventClusterRefinementProvider = (): EventClusterRefinementProvider
     return createUnconfiguredEventClusterRefinementProvider();
   }
 
-  return createNetlifyFunctionEventClusterRefinementProvider(resolveClusterRefinementFunctionConfig());
+  return createVercelFunctionEventClusterRefinementProvider(resolveClusterRefinementFunctionConfig());
 };
 
 export const runDiscovery = async (
