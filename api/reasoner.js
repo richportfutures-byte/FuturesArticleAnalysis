@@ -1,41 +1,75 @@
-const readEnv = (name) => process.env[name] ?? process.env[`VITE_${name}`];
-
 const extractJsonFromCompletion = (responsePayload) => {
   if (!responsePayload || typeof responsePayload !== 'object') {
     throw new Error('Provider returned a non-object response.');
   }
 
-  const content = responsePayload.choices?.[0]?.message?.content;
-  if (typeof content === 'string') {
-    return JSON.parse(content);
+  const blockReason = responsePayload.promptFeedback?.blockReason;
+  if (typeof blockReason === 'string' && blockReason.length > 0) {
+    throw new Error(`Provider blocked reasoner output: ${blockReason}`);
   }
 
-  if (Array.isArray(content)) {
-    const text = content
-      .map((entry) => (entry?.type === 'text' ? entry.text ?? '' : ''))
-      .join('')
-      .trim();
+  const candidate = responsePayload.candidates?.[0];
+  if (!candidate || typeof candidate !== 'object') {
+    throw new Error('Provider response did not contain a candidate payload.');
+  }
 
-    if (!text) {
-      throw new Error('Provider returned an empty text payload.');
+  const finishReason = candidate.finishReason;
+  if (typeof finishReason === 'string') {
+    if (finishReason === 'SAFETY') {
+      throw new Error('Provider blocked reasoner output at candidate level: SAFETY');
     }
-
-    return JSON.parse(text);
+    if (finishReason !== 'STOP') {
+      throw new Error(`Reasoner output was incomplete or non-successful: ${finishReason}`);
+    }
   }
 
-  throw new Error('Provider response did not contain a JSON text payload.');
+  const parts = candidate.content?.parts;
+  if (!Array.isArray(parts)) {
+    throw new Error('Provider response did not contain candidate content parts.');
+  }
+
+  const text = parts
+    .map((part) => (typeof part?.text === 'string' ? part.text : ''))
+    .join('')
+    .trim();
+
+  if (!text) {
+    throw new Error('Provider returned an empty text payload.');
+  }
+
+  return JSON.parse(text);
 };
 
 const getProviderConfig = () => {
-  const apiKey = readEnv('OPENAI_API_KEY');
-  const model = readEnv('OPENAI_MODEL');
-  const baseUrl = readEnv('OPENAI_BASE_URL') ?? 'https://api.openai.com/v1';
+  const apiKey = process.env.GEMINI_API_KEY;
+  const model = process.env.GEMINI_MODEL ?? 'gemini-3.1-pro-preview';
+  const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
-  if (!apiKey || !model) {
+  if (!apiKey) {
     return null;
   }
 
   return { apiKey, model, baseUrl };
+};
+
+const mapMessagesToGemini = (messages) => {
+  let systemInstruction = null;
+  const contents = [];
+
+  for (const message of messages) {
+    if (message.role === 'system') {
+      const text = typeof message.content === 'string' ? message.content : '';
+      if (text) {
+        systemInstruction = { parts: [{ text }] };
+      }
+    } else {
+      const role = message.role === 'assistant' ? 'model' : 'user';
+      const text = typeof message.content === 'string' ? message.content : '';
+      contents.push({ role, parts: [{ text }] });
+    }
+  }
+
+  return { systemInstruction, contents };
 };
 
 export default async function handler(req, res) {
@@ -44,7 +78,7 @@ export default async function handler(req, res) {
   if (req.method === 'GET') {
     return res.status(200).json({
       configured: Boolean(config),
-      providerId: config ? `openai:${config.model}` : 'unconfigured-live-provider',
+      providerId: config ? `gemini:${config.model}` : 'unconfigured-live-provider',
       model: config?.model ?? null
     });
   }
@@ -77,19 +111,36 @@ export default async function handler(req, res) {
     return res.status(400).json({ issue: 'Reasoner request must include at least one message.' });
   }
 
-  const response = await fetch(`${config.baseUrl.replace(/\/$/, '')}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${config.apiKey}`
-    },
-    body: JSON.stringify({
-      model: config.model,
+  const { systemInstruction, contents } = mapMessagesToGemini(messages);
+
+  if (contents.length === 0) {
+    return res.status(400).json({ issue: 'Reasoner request must include at least one non-system message.' });
+  }
+
+  const requestPayload = {
+    contents,
+    generationConfig: {
       temperature: typeof requestBody.temperature === 'number' ? requestBody.temperature : 0.2,
-      response_format: requestBody.response_format ?? { type: 'json_object' },
-      messages
-    })
-  });
+      responseMimeType: 'application/json'
+    }
+  };
+
+  if (systemInstruction) {
+    requestPayload.systemInstruction = systemInstruction;
+  }
+
+  const response = await fetch(
+    `${config.baseUrl.replace(/\/$/, '')}/models/${encodeURIComponent(config.model)}:generateContent`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'x-goog-api-key': config.apiKey
+      },
+      body: JSON.stringify(requestPayload)
+    }
+  );
 
   if (!response.ok) {
     let issue = `${response.status} ${response.statusText}`;
@@ -110,7 +161,7 @@ export default async function handler(req, res) {
     const analysis = extractJsonFromCompletion(responsePayload);
     return res.status(200).json({
       analysis,
-      providerId: `openai:${config.model}`
+      providerId: `gemini:${config.model}`
     });
   } catch (error) {
     return res.status(502).json({
