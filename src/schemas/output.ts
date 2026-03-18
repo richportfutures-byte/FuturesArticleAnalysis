@@ -1,13 +1,19 @@
 import { z } from 'zod';
 import {
   CausalCoherenceAssessment,
+  ClusterMode,
   ContractId,
   DeploymentUse,
+  DoctrineFit,
+  HorizonBucket,
   NoveltyAssessment,
+  PricingAssessment,
   PricedInAssessment,
   ReasonerMode,
+  RunMode,
   SourceSurvival,
   SourceType,
+  Verdict,
   WorkflowState
 } from '../domain/enums';
 import {
@@ -19,14 +25,14 @@ import {
   SourceOriginSchema
 } from './input';
 
-const CandidateContractRelevanceSchema = z.object({
+export const CandidateContractRelevanceSchema = z.object({
   contract_id: z.nativeEnum(ContractId),
   fit: z.enum(['primary', 'secondary', 'low']),
   rationale: z.string(),
   matched_focus: z.array(z.string())
 });
 
-const SourceGroundingSchema = z.object({
+export const SourceGroundingSchema = z.object({
   article_id: z.string(),
   source_type: z.nativeEnum(SourceType),
   grounding_type: z.enum(['confirmed_fact', 'inference', 'speculation', 'rhetoric']),
@@ -65,7 +71,7 @@ export const DeepAnalysisSchema = z.object({
   })
 });
 
-const NormalizedArticleSchema = z.object({
+export const NormalizedArticleSchema = z.object({
   article_id: z.string(),
   headline: z.string(),
   body_excerpt: z.string(),
@@ -85,7 +91,7 @@ const NormalizedArticleSchema = z.object({
   candidate_contract_relevance: z.array(CandidateContractRelevanceSchema)
 });
 
-const IntakeSourceRecordSchema = z.object({
+export const IntakeSourceRecordSchema = z.object({
   article_id: z.string(),
   headline: z.string(),
   url: z.string().nullable(),
@@ -99,7 +105,7 @@ const IntakeSourceRecordSchema = z.object({
   discovery_context: DiscoveryImportContextSchema.optional()
 });
 
-const IntakeSummarySchema = z.object({
+export const IntakeSummarySchema = z.object({
   intake_mode: IntakeModeSchema,
   status: z.enum(['ready', 'degraded', 'unresolved']),
   issues: z.array(z.string()),
@@ -118,31 +124,124 @@ const IntakeSummarySchema = z.object({
   })
 });
 
+export const ScreeningDecisionSchema = z.object({
+  article_id: z.string(),
+  headline: z.string(),
+  result: z.nativeEnum(SourceSurvival),
+  matched_drivers: z.array(z.string()),
+  relevance_score: z.number(),
+  source_quality_score: z.number(),
+  rationale: z.string()
+});
+
+export const ScreeningSummarySchema = z.object({
+  articles: z.array(ScreeningDecisionSchema),
+  selected_article_ids: z.array(z.string()),
+  context_article_ids: z.array(z.string()),
+  rejected_article_ids: z.array(z.string()),
+  aggregate_result: z.nativeEnum(SourceSurvival)
+});
+
+export const NarrativeClusterSchema = z.object({
+  cluster_id: z.string(),
+  contract_id: z.nativeEnum(ContractId),
+  cluster_mode: z.nativeEnum(ClusterMode),
+  theme: z.string(),
+  article_ids: z.array(z.string()),
+  dominant_narrative: z.string(),
+  source_map: z.array(z.string()),
+  common_facts: z.array(z.string()),
+  disputed_claims: z.array(z.string()),
+  strongest_source_article_id: z.string().nullable(),
+  weakest_source_article_id: z.string().nullable(),
+  newness_confidence: z.number(),
+  tradability_class: z.enum(['tradable', 'context_only', 'noise'])
+});
+
+export const HorizonSplitSchema = z.object({
+  bucket: z.nativeEnum(HorizonBucket),
+  note: z.string()
+});
+
+export const TranslationResultSchema = z.object({
+  contract_id: z.nativeEnum(ContractId),
+  selected_channels: z.array(z.string()),
+  matched_drivers: z.array(z.string()),
+  doctrine_fit: z.nativeEnum(DoctrineFit),
+  doctrine_alignment_summary: z.string(),
+  primary_driver_hierarchy: z.array(z.string()),
+  contract_implications: z.array(z.string()),
+  best_expression_vehicle: z.string(),
+  pricing_assessment: z.nativeEnum(PricingAssessment),
+  priced_in_assessment: z.nativeEnum(PricedInAssessment),
+  horizon_split: z.array(HorizonSplitSchema),
+  confirmation_markers: z.array(z.string()),
+  invalidation_markers: z.array(z.string()),
+  verdict: z.nativeEnum(Verdict),
+  confidence_score: z.number(),
+  actionability_score: z.number(),
+  trade_use_note: z.string(),
+  bounded_risk_statement: z.string(),
+  deployment_windows: z.array(z.string()),
+  least_valuable_use: z.string()
+});
+
+export const BiasBriefSchema = z.object({
+  title: z.string(),
+  executive_summary: z.string(),
+  contract_implications: z.array(z.string()),
+  alternative_interpretation: z.string(),
+  confirmation_watchlist: z.array(z.string()),
+  invalidation_watchlist: z.array(z.string()),
+  posture: z.nativeEnum(DeploymentUse),
+  source_grounding_note: z.string(),
+  bounded_use: z.string(),
+  confidence_notes: z.array(z.string()),
+  explicit_unknowns: z.array(z.string()),
+  prose: z.string()
+});
+
+export const ProvenanceRecordSchema = z.object({
+  source_files: z.array(z.string()),
+  rule_ids: z.array(z.string()),
+  contract_override_ids: z.array(z.string()),
+  notes: z.array(z.string()),
+  rule_trace: z.array(
+    z.object({
+      stage: z.enum(['pipeline', 'discover', 'intake', 'screen', 'cluster', 'analyze', 'translate', 'deploy']),
+      rule_id: z.string(),
+      source_files: z.array(z.string()),
+      detail: z.string(),
+      heuristic: z.boolean().optional()
+    })
+  ),
+  intake_mode: IntakeModeSchema.optional(),
+  intake_status: z.enum(['ready', 'degraded', 'unresolved']).optional(),
+  intake_sources: z.array(IntakeSourceRecordSchema).optional()
+});
+
+export const ActiveHoursContextSchema = z.object({
+  structural_windows: z.array(z.string()).optional(),
+  event_windows: z.array(z.string()).optional(),
+  dominant_side: z.enum(['euro_driver', 'dollar_driver', 'mixed', 'unclear']).optional()
+});
+
 export const RunOutputSchema = z.object({
   run_id: z.string(),
-  contract_id: z.string(),
+  contract_id: z.nativeEnum(ContractId),
+  run_mode: z.nativeEnum(RunMode),
   state: z.nativeEnum(WorkflowState),
-  screen_result: z.nativeEnum(SourceSurvival),
-  deployment_use: z.nativeEnum(DeploymentUse),
   intake: IntakeSummarySchema,
-  analysis: DeepAnalysisSchema.nullable().optional(),
-  bias_brief: z
-    .object({
-      title: z.string(),
-      executive_summary: z.string(),
-      prose: z.string()
-    })
-    .nullable(),
-  provenance: z.object({
-    source_files: z.array(z.string()),
-    rule_ids: z.array(z.string()),
-    contract_override_ids: z.array(z.string()),
-    notes: z.array(z.string())
-  }).extend({
-    intake_mode: IntakeModeSchema.optional(),
-    intake_status: z.enum(['ready', 'degraded', 'unresolved']).optional(),
-    intake_sources: z.array(IntakeSourceRecordSchema).optional()
-  })
+  screening: ScreeningSummarySchema,
+  screen_result: z.nativeEnum(SourceSurvival),
+  cluster: NarrativeClusterSchema.nullable(),
+  analysis: DeepAnalysisSchema.nullable(),
+  translation: TranslationResultSchema.nullable(),
+  bias_brief: BiasBriefSchema.nullable(),
+  deployment_use: z.nativeEnum(DeploymentUse),
+  active_hours_context: ActiveHoursContextSchema.nullable(),
+  terminal_outcome: z.enum(['irrelevant', 'noise', 'insufficient_evidence', 'no_edge']).optional(),
+  provenance: ProvenanceRecordSchema
 });
 
 export const DiscoveryCandidateSchema = z.object({
