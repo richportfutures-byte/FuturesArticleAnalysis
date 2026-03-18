@@ -34,6 +34,52 @@ const invokeVercelHandler = async (handler: (req: any, res: any) => Promise<unkn
   };
 };
 
+const buildDiscoveryBoundaryRequestBody = () =>
+  JSON.stringify({
+    recency_window_hours: 72,
+    max_results: 12,
+    query_presets: [
+      {
+        preset_id: 'test-preset',
+        query: 'Federal Reserve CPI PCE payroll labor data yields megacap tech Nasdaq',
+        preferred_domains: ['federalreserve.gov'],
+        max_results: 2
+      }
+    ]
+  });
+
+const invokeDiscoveryBoundaryWithFailedProvider = async (
+  providerPayload: unknown,
+  responseMeta: { status?: number; statusText?: string } = {}
+) => {
+  const originalApiKey = process.env.TAVILY_API_KEY;
+  const originalFetch = globalThis.fetch;
+  process.env.TAVILY_API_KEY = 'test-tavily-key';
+
+  globalThis.fetch = vi.fn(async () =>
+    ({
+      ok: false,
+      status: responseMeta.status ?? 429,
+      statusText: responseMeta.statusText ?? 'Too Many Requests',
+      json: async () => providerPayload
+    }) as Response
+  );
+
+  try {
+    return await invokeVercelHandler(discoverHandler, {
+      method: 'POST',
+      body: buildDiscoveryBoundaryRequestBody()
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalApiKey === undefined) {
+      delete process.env.TAVILY_API_KEY;
+    } else {
+      process.env.TAVILY_API_KEY = originalApiKey;
+    }
+  }
+};
+
 const buildCrossContractProvider = (): DiscoveryProvider => ({
   providerId: 'mock-cross-contract-provider',
   configured: true,
@@ -330,18 +376,7 @@ describe('recent discovery', () => {
     try {
       const response = await invokeVercelHandler(discoverHandler, {
         method: 'POST',
-        body: JSON.stringify({
-          recency_window_hours: 72,
-          max_results: 12,
-          query_presets: [
-            {
-              preset_id: 'test-preset',
-              query: 'Federal Reserve CPI PCE payroll labor data yields megacap tech Nasdaq',
-              preferred_domains: ['federalreserve.gov'],
-              max_results: 2
-            }
-          ]
-        })
+        body: buildDiscoveryBoundaryRequestBody()
       });
 
       expect(response.statusCode).toBe(503);
@@ -355,6 +390,56 @@ describe('recent discovery', () => {
         process.env.TAVILY_API_KEY = originalApiKey;
       }
     }
+  });
+
+  it('normalizes string Tavily error payloads at the Vercel boundary', async () => {
+    const response = await invokeDiscoveryBoundaryWithFailedProvider('Rate limit exceeded.');
+
+    expect(response.statusCode).toBe(502);
+    const payload = JSON.parse(response.body) as { issue?: string; retrieved_at?: string };
+    expect(payload.issue).toBe('Discovery provider tavily:news-search failed: Rate limit exceeded.');
+    expect(payload.issue).not.toContain('[object Object]');
+    expect(payload.retrieved_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('normalizes object Tavily error payloads at the Vercel boundary', async () => {
+    const response = await invokeDiscoveryBoundaryWithFailedProvider({
+      detail: {
+        message: 'Query rejected by Tavily'
+      }
+    }, {
+      status: 400,
+      statusText: 'Bad Request'
+    });
+
+    expect(response.statusCode).toBe(502);
+    const payload = JSON.parse(response.body) as { issue?: string; retrieved_at?: string };
+    expect(payload.issue).toBe('Discovery provider tavily:news-search failed: Query rejected by Tavily.');
+    expect(payload.issue).not.toContain('[object Object]');
+    expect(payload.retrieved_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
+  });
+
+  it('normalizes nested object Tavily error payloads at the Vercel boundary', async () => {
+    const response = await invokeDiscoveryBoundaryWithFailedProvider({
+      error: {
+        errors: [
+          {
+            detail: {
+              message: 'Nested Tavily validation failure.'
+            }
+          }
+        ]
+      }
+    }, {
+      status: 422,
+      statusText: 'Unprocessable Entity'
+    });
+
+    expect(response.statusCode).toBe(502);
+    const payload = JSON.parse(response.body) as { issue?: string; retrieved_at?: string };
+    expect(payload.issue).toBe('Discovery provider tavily:news-search failed: Nested Tavily validation failure.');
+    expect(payload.issue).not.toContain('[object Object]');
+    expect(payload.retrieved_at).toMatch(/^\d{4}-\d{2}-\d{2}T/);
   });
 
   it('builds deterministic pre-clusters for a cross-contract morning scan', async () => {
