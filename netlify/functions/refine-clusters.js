@@ -131,7 +131,7 @@ const extractJsonFromCompletion = (responsePayload) => {
 
 const getProviderConfig = () => {
   const apiKey = process.env.GEMINI_API_KEY;
-  const model = process.env.GEMINI_MODEL ?? 'gemini-3-pro-preview';
+  const model = process.env.GEMINI_MODEL ?? 'gemini-3.1-pro-preview';
   const baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
 
   if (!apiKey) {
