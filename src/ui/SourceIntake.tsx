@@ -1,28 +1,17 @@
 import type { ChangeEvent } from 'react';
-import { IntakeMode, SourceCompleteness } from '../domain/entities';
+import type { IntakeMode } from '../domain/entities';
 import { ContractId, RunMode, SourceType } from '../domain/enums';
+import type { IntakeDraftState } from '../app/workbenchState';
 
 type Props = {
   contractId: ContractId;
-  setContractId: (id: ContractId) => void;
+  onContractChange: (id: ContractId) => void;
   runMode: RunMode;
   setRunMode: (mode: RunMode) => void;
   intakeMode: IntakeMode;
   setIntakeMode: (mode: IntakeMode) => void;
-  headline: string;
-  setHeadline: (value: string) => void;
-  bodyExcerpt: string;
-  setBodyExcerpt: (value: string) => void;
-  sourceType: SourceType;
-  setSourceType: (value: SourceType) => void;
-  sourceUrl: string;
-  setSourceUrl: (value: string) => void;
-  publisher: string;
-  setPublisher: (value: string) => void;
-  publishedAt: string;
-  setPublishedAt: (value: string) => void;
-  sourceCompleteness: SourceCompleteness;
-  setSourceCompleteness: (value: SourceCompleteness) => void;
+  draft: IntakeDraftState;
+  updateDraft: (patch: Partial<IntakeDraftState>) => void;
   onRun: () => void;
   onLoadSample: () => void;
   parsedCount: number;
@@ -32,25 +21,13 @@ type Props = {
 
 export const SourceIntake = ({
   contractId,
-  setContractId,
+  onContractChange,
   runMode,
   setRunMode,
   intakeMode,
   setIntakeMode,
-  headline,
-  setHeadline,
-  bodyExcerpt,
-  setBodyExcerpt,
-  sourceType,
-  setSourceType,
-  sourceUrl,
-  setSourceUrl,
-  publisher,
-  setPublisher,
-  publishedAt,
-  setPublishedAt,
-  sourceCompleteness,
-  setSourceCompleteness,
+  draft,
+  updateDraft,
   onRun,
   onLoadSample,
   parsedCount,
@@ -69,7 +46,7 @@ export const SourceIntake = ({
       <div className="input-row">
         <label>
           Contract
-          <select value={contractId} onChange={(e: ChangeEvent<HTMLSelectElement>) => setContractId(e.target.value as ContractId)}>
+          <select value={contractId} onChange={(e: ChangeEvent<HTMLSelectElement>) => onContractChange(e.target.value as ContractId)}>
             {Object.values(ContractId).map((id) => (
               <option key={id} value={id}>
                 {id}
@@ -99,12 +76,19 @@ export const SourceIntake = ({
       <div className="input-row">
         <label>
           Headline / title
-          <input value={headline} onChange={(e: ChangeEvent<HTMLInputElement>) => setHeadline(e.target.value)} placeholder="Article headline" />
+          <input
+            value={draft.headline}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => updateDraft({ headline: e.target.value })}
+            placeholder="Article headline"
+          />
         </label>
 
         <label>
           Source type
-          <select value={sourceType} onChange={(e: ChangeEvent<HTMLSelectElement>) => setSourceType(e.target.value as SourceType)}>
+          <select
+            value={draft.sourceType}
+            onChange={(e: ChangeEvent<HTMLSelectElement>) => updateDraft({ sourceType: e.target.value as SourceType })}
+          >
             {Object.values(SourceType).map((value) => (
               <option key={value} value={value}>
                 {value}
@@ -117,19 +101,27 @@ export const SourceIntake = ({
       <div className="input-row">
         <label>
           Source URL
-          <input value={sourceUrl} onChange={(e: ChangeEvent<HTMLInputElement>) => setSourceUrl(e.target.value)} placeholder="https://..." />
+          <input
+            value={draft.sourceUrl}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => updateDraft({ sourceUrl: e.target.value })}
+            placeholder="https://..."
+          />
         </label>
 
         <label>
           Publisher / source label
-          <input value={publisher} onChange={(e: ChangeEvent<HTMLInputElement>) => setPublisher(e.target.value)} placeholder="Reuters, WSJ, official desk" />
+          <input
+            value={draft.publisher}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => updateDraft({ publisher: e.target.value })}
+            placeholder="Reuters, WSJ, official desk"
+          />
         </label>
 
         <label>
           Published timestamp
           <input
-            value={publishedAt}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => setPublishedAt(e.target.value)}
+            value={draft.publishedAt}
+            onChange={(e: ChangeEvent<HTMLInputElement>) => updateDraft({ publishedAt: e.target.value })}
             placeholder="2026-03-16T08:30:00Z"
           />
         </label>
@@ -144,8 +136,10 @@ export const SourceIntake = ({
           <label>
             Content completeness
             <select
-              value={sourceCompleteness}
-              onChange={(e: ChangeEvent<HTMLSelectElement>) => setSourceCompleteness(e.target.value as SourceCompleteness)}
+              value={draft.sourceCompleteness}
+              onChange={(e: ChangeEvent<HTMLSelectElement>) =>
+                updateDraft({ sourceCompleteness: e.target.value as IntakeDraftState['sourceCompleteness'] })
+              }
             >
               <option value="full_text">full_text</option>
               <option value="partial_text">partial_text</option>
@@ -153,8 +147,8 @@ export const SourceIntake = ({
           </label>
 
           <textarea
-            value={bodyExcerpt}
-            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setBodyExcerpt(e.target.value)}
+            value={draft.bodyExcerpt}
+            onChange={(e: ChangeEvent<HTMLTextAreaElement>) => updateDraft({ bodyExcerpt: e.target.value })}
             placeholder="Paste article text or excerpt here"
           />
         </>
@@ -178,7 +172,7 @@ export const SourceIntake = ({
         <span className="pill accent">{contractId}</span>
         <span className="pill">{runMode}</span>
         <span className="pill">{intakeMode}</span>
-        {intakeMode === 'manual_url' ? <span className="pill">unresolved capture</span> : <span className="pill">{sourceCompleteness}</span>}
+        {intakeMode === 'manual_url' ? <span className="pill">unresolved capture</span> : <span className="pill">{draft.sourceCompleteness}</span>}
         <span className="pill">{parsedCount} prepared article(s)</span>
       </div>
     </div>
