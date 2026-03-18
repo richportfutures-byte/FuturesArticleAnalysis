@@ -13,6 +13,72 @@ const getProviderConfig = () => {
   return apiKey ? { apiKey, baseUrl } : null;
 };
 
+const COMMON_ERROR_FIELDS = ['detail', 'error', 'message', 'errors', 'reason', 'description', 'title'];
+
+const extractReadableProviderError = (value, seen = new WeakSet()) => {
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    return trimmed || null;
+  }
+
+  if (typeof value === 'number' || typeof value === 'boolean' || typeof value === 'bigint') {
+    return String(value);
+  }
+
+  if (!value || typeof value !== 'object') {
+    return null;
+  }
+
+  if (seen.has(value)) {
+    return null;
+  }
+  seen.add(value);
+
+  if (Array.isArray(value)) {
+    const parts = value.map((entry) => extractReadableProviderError(entry, seen)).filter(Boolean);
+    return parts.length > 0 ? parts.join('; ') : null;
+  }
+
+  for (const field of COMMON_ERROR_FIELDS) {
+    if (field in value) {
+      const nested = extractReadableProviderError(value[field], seen);
+      if (nested) {
+        return nested;
+      }
+    }
+  }
+
+  for (const nestedValue of Object.values(value)) {
+    const nested = extractReadableProviderError(nestedValue, seen);
+    if (nested) {
+      return nested;
+    }
+  }
+
+  return null;
+};
+
+const normalizeProviderErrorPayload = (payload, response) => {
+  const readable = extractReadableProviderError(payload);
+  if (readable) {
+    return readable;
+  }
+
+  try {
+    const serialized = JSON.stringify(payload);
+    if (serialized && !['{}', '[]', 'null', '""'].includes(serialized)) {
+      return serialized;
+    }
+  } catch {
+    // Keep HTTP status fallback.
+  }
+
+  return `HTTP ${response.status} ${response.statusText}`.trim();
+};
+
+const formatDiscoveryProviderIssue = (providerId, issue) =>
+  `Discovery provider ${providerId} failed: ${/[.!?]$/.test(issue) ? issue : `${issue}.`}`;
+
 const mapTavilyResults = (payload, preset) =>
   (payload?.results ?? [])
     .filter((entry) => entry?.title || entry?.url)
@@ -92,18 +158,15 @@ export default async function handler(req, res) {
     });
 
     if (!response.ok) {
-      let issue = `${response.status} ${response.statusText}`;
+      let issue = `HTTP ${response.status} ${response.statusText}`.trim();
       try {
-        const payload = await response.json();
-        if (payload?.detail || payload?.error) {
-          issue = payload.detail ?? payload.error ?? issue;
-        }
+        issue = normalizeProviderErrorPayload(await response.json(), response);
       } catch {
         // Keep HTTP status fallback.
       }
 
       return res.status(502).json({
-        issue: `Discovery provider tavily:news-search failed: ${issue}.`,
+        issue: formatDiscoveryProviderIssue('tavily:news-search', issue),
         retrieved_at: retrievedAt
       });
     }
